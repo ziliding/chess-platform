@@ -43,6 +43,7 @@ services:
     hostname: rabbitmq
     image: rabbitmq:4.1-management
     ports:
+      - "5672:5672" # AMQP (analysis jobs)
       - "61613:61613" # STOMP
       - "15672:15672" # management UI
     networks:
@@ -81,6 +82,10 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-password}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-chess}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-password}
       APP_WEBSOCKET_RELAY_ENABLED: true
       APP_WEBSOCKET_RELAY_HOST: rabbitmq
       APP_WEBSOCKET_RELAY_PORT: 61613
@@ -97,6 +102,24 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # Evaluates archived games with Stockfish for the backend. Stateless: it only talks to RabbitMQ, so scale it with
+  # `deploy.replicas`. The backend stays up without it; analysis requests then answer "temporarily unavailable".
+  analysis:
+    profiles: [ app ]
+    build:
+      context: ./analysis
+      target: runtime
+    networks:
+      - backend
+    environment:
+      AMQP_URL: amqp://${RABBITMQ_USER:-chess}:${RABBITMQ_PASSWORD:-password}@rabbitmq:5672/
+      ENGINE_DEPTH: ${ANALYSIS_ENGINE_DEPTH:-16}
+    # Lets a job in progress finish when the container is stopped
+    stop_grace_period: 60s
+    depends_on:
       rabbitmq:
         condition: service_healthy
 

@@ -83,6 +83,35 @@ flowchart LR
     B1 & B2 <--> MQ["RabbitMQ<br/>STOMP broker"]
 ```
 
+### AI game analysis
+
+A player can ask for an analysis of any archived game: an evaluation for every move, the inaccuracies, mistakes and
+blunders with the better move, and a short summary. It opens from **History → Analyze** as a board you can step
+through.
+
+The work runs in a separate, stateless Python service (`analysis/`: FastAPI, `python-chess`, Stockfish), not in the
+backend. The backend owns games, users and auth, stores the results in PostgreSQL, and talks to the service only
+through RabbitMQ:
+
+```mermaid
+flowchart LR
+    Browser["Browser"] -- "POST /api/games/{id}/analysis" --> B["Backend"]
+    B -- "job (AMQP)" --> Q["RabbitMQ<br/>analysis.requests"]
+    Q --> A["Analysis service<br/>Stockfish"]
+    A -- "result (AMQP)" --> B
+    B -- "WebSocket push" --> Browser
+```
+
+- **Versioned contracts.** Every message carries a `schemaVersion`. The golden examples in `contracts/analysis/v1/`
+  are checked by both the Java and the Python tests.
+- **Idempotent jobs.** One analysis per match; a repeated request returns the same job, and a duplicate or late result
+  is ignored, because every state change is a conditional statement.
+- **Failure handling.** A job that nobody answers is failed with `TIMED_OUT` after three minutes, by any backend
+  instance. Unreadable messages go to dead-letter queues you can inspect in the RabbitMQ UI. A request made while
+  the service is down is refused right away with "temporarily unavailable", and the rest of the platform is unaffected.
+
+The design and its trade-offs are in [`docs/specs/ai-analysis.md`](docs/specs/ai-analysis.md).
+
 ---
 
 ## Tech Stack
@@ -91,7 +120,8 @@ flowchart LR
 |----------------|--------------------------------------------------------------------------------------------------------|
 | Backend        | Java 25 (virtual threads), Spring Boot 4.1, Spring Security, Spring WebSocket (STOMP), Spring Data JPA |
 | Data           | PostgreSQL 17.5 with Flyway migrations, Redis 8.6 with Spring Session                                  |
-| Messaging      | RabbitMQ 4.1 as an external STOMP broker                                                               |
+| Messaging      | RabbitMQ 4.1: external STOMP broker for WebSockets, AMQP for analysis jobs                             |
+| Analysis       | Python 3.15, FastAPI, python-chess, Stockfish, Pydantic, aio-pika, uv, ruff, pyrefly, pytest           |
 | Frontend       | React 19, TypeScript, Vite, Tailwind CSS, react-chessboard, chess.js, STOMP.js                         |
 | Quality        | JUnit, Mockito, Testcontainers, JSpecify with NullAway, Vitest, ESLint, Gatling                        |
 | Infrastructure | Docker Compose, nginx, GitHub Actions                                                                  |
@@ -100,7 +130,7 @@ flowchart LR
 
 ## Getting Started
 
-You need Docker and Docker Compose. These ports must be free: 3000, 8080, 5432, 6379, 61613, and 15672.
+You need Docker and Docker Compose. These ports must be free: 3000, 8080, 5432, 6379, 5672, 61613, and 15672.
 
 ```bash
 docker compose --profile app up --build
@@ -150,6 +180,7 @@ few credentials, and `backend/.env.example` for deploying the backend on its own
 | `SPRING_DATASOURCE_URL`, `_USERNAME`, `_PASSWORD`          | PostgreSQL connection                                                                      |
 | `SPRING_DATA_REDIS_HOST`, `_PORT`                          | Redis connection                                                                           |
 | `APP_ALLOWED_ORIGINS`                                      | Comma-separated frontend origins allowed for HTTP and WebSocket requests                   |
+| `SPRING_RABBITMQ_HOST`, `_PORT`, `_USERNAME`, `_PASSWORD`  | RabbitMQ AMQP connection, for analysis jobs                                                |
 | `APP_WEBSOCKET_RELAY_ENABLED`                              | Route WebSocket messages through RabbitMQ. Required when running more than one instance.   |
 | `APP_WEBSOCKET_RELAY_HOST`, `_PORT`, `_LOGIN`, `_PASSCODE` | RabbitMQ STOMP connection                                                                  |
 
@@ -162,6 +193,15 @@ From `backend/`:
 ```bash
 ./mvnw test     # unit tests, no Docker needed
 ./mvnw verify   # also runs the integration tests
+```
+
+Lint, type checks and the analysis service's tests run in the image that ships, so they use the same Stockfish. The
+worker tests need a RabbitMQ with the compose credentials (`docker compose up --detach rabbitmq`):
+
+```bash
+docker build --target test -t analysis-test analysis
+docker run --rm -e AMQP_TEST_URL=amqp://chess:password@host.docker.internal:5672/ \
+  -v "$PWD/contracts:/contracts:ro" analysis-test
 ```
 
 Integration tests (`*IT`) start PostgreSQL, Redis, and RabbitMQ with Testcontainers and apply the migrations with

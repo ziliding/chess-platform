@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "jobId": "0192c7a4-5b1e-7c3a-9f00-2d1c8e7b6a01",
+  "matchId": "0192c7a1-0e44-7d2b-8a10-6f3e2b9c4d55",
+  "pgn": "[StartTime \"2026-10-26T10:00:00Z\"]\n[EndTime \"2026-10-26T10:01:00Z\"]\n[Round \"4\"]\n[White \"alice\"]\n[Black \"bob\"]\n[Result \"1-0\"]\n[Termination \"White wins by checkmate\"]\n\n1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7#\n1-0",
+  "deadline": "2026-10-26T12:03:00Z"
+}

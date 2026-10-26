@@ -147,3 +147,37 @@ export interface GameJoinResponse {
   status: GameStatus;
   currentTurn: string;
 }
+
+// AI game analysis (contract v1, see docs/specs/ai-analysis.md)
+export type AnalysisStatus = 'QUEUED' | 'COMPLETED' | 'FAILED';
+export type MoveClassification = 'BEST' | 'GOOD' | 'INACCURACY' | 'MISTAKE' | 'BLUNDER';
+
+// From White's point of view; exactly one of the two is set. mate 0 means the side to move is checkmated.
+export interface AnalysisEval {
+  cp: number | null;
+  mate: number | null;
+}
+
+export interface AnalysisMove {
+  ply: number;
+  san: string;
+  uci: string;
+  eval: AnalysisEval;
+  bestSan: string;
+  bestUci: string;
+  winChanceLoss: number;
+  classification: MoveClassification;
+}
+
+export interface Analysis {
+  matchId: string;
+  status: AnalysisStatus;
+  errorCode: string | null;
+  // When a QUEUED analysis is given up on
+  deadline: string;
+  completedAt: string | null;
+  engine: { name: string; depth: number } | null;
+  initialEval: AnalysisEval | null;
+  moves: AnalysisMove[] | null;
+  summary: { text: string; source: 'TEMPLATE' | 'LLM' } | null;
+}

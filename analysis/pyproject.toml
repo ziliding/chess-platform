@@ -1,0 +1,46 @@
+[project]
+name = "analysis"
+version = "0.1.0"
+description = "Stateless chess game analysis worker: Stockfish evaluations over RabbitMQ"
+requires-python = ">=3.15"
+dependencies = [
+    "aio-pika>=10.2",
+    "chess>=1.11",
+    "fastapi>=0.162",
+    "pydantic>=2.14",
+    "uvicorn>=0.40",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28",
+    "pyrefly>=1.4",
+    "pytest>=9",
+    "pytest-asyncio>=1",
+    "pytest-cov>=7",
+    "ruff>=0.17",
+    "testcontainers>=4.15",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/analysis"]
+
+[tool.ruff]
+line-length = 110
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.pyrefly]
+project-includes = ["src", "tests"]
+search-path = ["src", "."]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]

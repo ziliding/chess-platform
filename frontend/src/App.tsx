@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Game from './pages/Game';
 import Profile from './pages/Profile';
 import History from './pages/History';
+import Analysis from './pages/Analysis';
 import Friends from './pages/Friends';
 import Navbar from './components/Navbar';
 
@@ -44,6 +45,14 @@ const AppRoutes = () => {
             element={
               <PrivateRoute>
                 <Game />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/games/:matchId/analysis"
+            element={
+              <PrivateRoute>
+                <Analysis />
               </PrivateRoute>
             }
           />

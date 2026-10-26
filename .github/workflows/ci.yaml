@@ -88,6 +88,41 @@ jobs:
       - name: Build
         run: npm run build
 
+  # Lint, types and tests run inside the image's test stage, so they use the same Stockfish that ships
+  analysis:
+    name: Analysis service
+    runs-on: ubuntu-latest
+
+    services:
+      # The worker tests talk to a real broker; the user must not be `guest`, which RabbitMQ limits to localhost
+      rabbitmq:
+        image: rabbitmq:4.1
+        env:
+          RABBITMQ_DEFAULT_USER: chess
+          RABBITMQ_DEFAULT_PASS: password
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q check_port_connectivity"
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Build the test image
+        run: docker build --target test --tag analysis-test analysis
+
+      - name: Lint, type check and test
+        # The contracts are shared with the backend tests and live outside the image
+        run: >-
+          docker run --rm --network host
+          --env AMQP_TEST_URL=amqp://chess:password@localhost:5672/
+          --volume "$PWD/contracts:/contracts:ro"
+          analysis-test
+
   # Plays one full game through the gateway, so it catches breakage between services that unit tests miss
   loadtest-smoke:
     name: Load test (smoke)

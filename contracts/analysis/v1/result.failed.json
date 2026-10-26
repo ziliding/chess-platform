@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "jobId": "0192c7a4-5b1e-7c3a-9f00-2d1c8e7b6a01",
+  "matchId": "0192c7a1-0e44-7d2b-8a10-6f3e2b9c4d55",
+  "status": "FAILED",
+  "engine": null,
+  "initialEval": null,
+  "moves": null,
+  "summary": null,
+  "error": {
+    "code": "INVALID_PGN",
+    "message": "illegal san: 'Nf9' in 3..."
+  }
+}

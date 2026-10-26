@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "jobId": "0192c7a4-5b1e-7c3a-9f00-2d1c8e7b6a01",
+  "matchId": "0192c7a1-0e44-7d2b-8a10-6f3e2b9c4d55",
+  "status": "COMPLETED",
+  "engine": {
+    "name": "Stockfish 17.1",
+    "depth": 16
+  },
+  "initialEval": {
+    "cp": 37,
+    "mate": null
+  },
+  "moves": [
+    {
+      "ply": 1,
+      "san": "e4",
+      "uci": "e2e4",
+      "eval": {
+        "cp": 37,
+        "mate": null
+      },
+      "bestSan": "e4",
+      "bestUci": "e2e4",
+      "winChanceLoss": 0.0,
+      "classification": "BEST"
+    },
+    {
+      "ply": 2,
+      "san": "e5",
+      "uci": "e7e5",
+      "eval": {
+        "cp": 41,
+        "mate": null
+      },
+      "bestSan": "e5",
+      "bestUci": "e7e5",
+      "winChanceLoss": 0.0073,
+      "classification": "BEST"
+    },
+    {
+      "ply": 3,
+      "san": "Bc4",
+      "uci": "f1c4",
+      "eval": {
+        "cp": 4,
+        "mate": null
+      },
+      "bestSan": "Nf3",
+      "bestUci": "g1f3",
+      "winChanceLoss": 0.068,
+      "classification": "GOOD"
+    },
+    {
+      "ply": 4,
+      "san": "Nc6",
+      "uci": "b8c6",
+      "eval": {
+        "cp": 37,
+        "mate": null
+      },
+      "bestSan": "Nf6",
+      "bestUci": "g8f6",
+      "winChanceLoss": 0.0606,
+      "classification": "GOOD"
+    },
+    {
+      "ply": 5,
+      "san": "Qh5",
+      "uci": "d1h5",
+      "eval": {
+        "cp": -33,
+        "mate": null
+      },
+      "bestSan": "Nf3",
+      "bestUci": "g1f3",
+      "winChanceLoss": 0.1287,
+      "classification": "INACCURACY"
+    },
+    {
+      "ply": 6,
+      "san": "Nf6",
+      "uci": "g8f6",
+      "eval": {
+        "cp": null,
+        "mate": 1
+      },
+      "bestSan": "g6",
+      "bestUci": "g7g6",
+      "winChanceLoss": 1.0607,
+      "classification": "BLUNDER"
+    },
+    {
+      "ply": 7,
+      "san": "Qxf7#",
+      "uci": "h5f7",
+      "eval": {
+        "cp": null,
+        "mate": 0
+      },
+      "bestSan": "Qxf7#",
+      "bestUci": "h5f7",
+      "winChanceLoss": 0.0,
+      "classification": "BEST"
+    }
+  ],
+  "summary": {
+    "text": "White: 1 inaccuracy, 0 mistakes, 0 blunders. Black: 0 inaccuracies, 0 mistakes, 1 blunder. Turning point: 3...Nf6?? (3...g6 was best), from -0.3 to mate in 1. White won by checkmate.",
+    "source": "TEMPLATE"
+  },
+  "error": null
+}

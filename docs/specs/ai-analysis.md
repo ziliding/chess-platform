@@ -1,6 +1,6 @@
 # AI game analysis
 
-**Status:** Draft. Awaiting approval; no code has been written yet.
+**Status:** Approved. Phase 1 is implemented on `feat/ai-analysis-phase-1` (see "Phase 1 as built" in §14); phases 2–4 are not started.
 **Branch:** `feat/ai-analysis`
 **Date:** 2026-10-26
 
@@ -386,7 +386,7 @@ CREATE INDEX idx_game_analyses_queued_deadline ON game_analyses (deadline) WHERE
 
 Errors use the existing `ProblemDetail` format.
 
-`AnalysisResponse` is `{ matchId, status, errorCode, requestedAt, deadline, completedAt, engine, initialEval, moves,
+`AnalysisResponse` is `{ matchId, status, errorCode, deadline, completedAt, engine, initialEval, moves,
 summary }`. The same DTO is pushed over the WebSocket.
 
 ### 5.4 Request flow (`AnalysisService.request`)
@@ -514,7 +514,7 @@ them.
 
 | Condition                                      | How it is detected                                       | API                                        | What the user sees                                                                             |
 | ---------------------------------------------- | -------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| Not analyzed yet                               | GET returns 404                                          | —                                          | An **Analyze game** button (only for players). Spectators see "Not analyzed yet".              |
+| Not analyzed yet                               | GET returns 404                                          | —                                          | An **Analyze game** button. The page cannot tell players from spectators, so a spectator who clicks gets the 403 message.              |
 | Queued or running                              | `status=QUEUED`                                          | —                                          | "Analyzing… usually takes under 30 s", with the board usable                                   |
 | Analysis service down                          | 0 consumers on `analysis.requests`                       | `503 ANALYSIS_UNAVAILABLE`, no row written | "Analysis is temporarily unavailable. Try again in a few minutes." The button stays enabled.   |
 | Broker down, or publish fails                  | Publish nacked, returned or timed out                    | `503 ANALYSIS_UNAVAILABLE`                 | Same as above                                                                                  |
@@ -601,8 +601,9 @@ them.
 | End to end (phase 2) | The smoke scenario already ends with a logged-in player whose game has just been archived, so its last step requests analysis of that match. `LOADTEST_EXPECT_ANALYSIS` sets what that step checks. **Happy path:** with `completed`, it polls GET until the analysis is COMPLETED (up to 60 s). **Failure path:** a second CI step runs `docker compose stop analysis`, then runs the smoke again with `unavailable`, and expects `503 ANALYSIS_UNAVAILABLE` | `ChessGameSimulation` and `.github/workflows/ci.yaml`, `loadtest-smoke` job                                                                   |
 
 **CI** gets a new `analysis` job. It builds the image's `test` stage, which has the same Stockfish as production, and
-runs `ruff check`, `ruff format --check`, `pyrefly check`, and `pytest --cov-fail-under=80` inside it. The worker tests need
-Docker for testcontainers, so that stage runs with the Docker socket mounted. The engine eval joins it in phase 3. The existing backend tests must keep passing once the AMQP
+runs `ruff check`, `ruff format --check`, `pyrefly check`, and `pytest --cov-fail-under=80` inside it. The worker tests need a
+broker: CI provides a RabbitMQ service container and passes its URL in `AMQP_TEST_URL`; without that variable the tests
+start one with testcontainers. The engine eval joins it in phase 3. The existing backend tests must keep passing once the AMQP
 starter is on the classpath.
 
 ---
@@ -738,6 +739,27 @@ This phase fixes the full contract and topology, and delivers the happy path plu
 - The L1–L7 eval: a `workflow_dispatch` job with the hosted key as a secret, and the report committed.
 
 ---
+
+### Phase 1 as built
+
+Deviations from the draft above, and the §15 checks phase 1 settled:
+
+- **`requestedAt` is not in `AnalysisResponse`.** Nothing needs it; `deadline` is enough.
+- **Analyze button for everyone.** Whether the viewer is a player is not available to the page without a new
+  endpoint, so the server's 403 is shown instead.
+- **`GameAnalysis` is a read-only entity.** Every change is a conditional native statement in `GameAnalysisRepo`.
+  The jsonb `result` is a `String` with `@JdbcTypeCode(SqlTypes.JSON)`; it round-trips (§15.2 settled, no fallback).
+- **Converter (§15.1 settled).** `JacksonJsonMessageConverter(jsonMapper)` with `TypePrecedence.INFERRED`; the
+  contract test reads every fixture through that bean, as the listener does.
+- **Thresholds (§15.3, thresholds part settled).** 0.3, 0.2 and 0.1 match lila's `Advice.scala`. lila also has
+  special rules for creating or losing a mate (`MateCreated`, `MateLost`, by centipawn range); this service
+  counts a mate as +-1 winning chances instead. Phase 3 measures the difference.
+- **Stockfish (§15.5 settled).** The `python:3.15-slim-trixie` image has Stockfish 17.1.
+- **Python input check.** python-chess silently skips movetext it cannot tokenize (`2. Nf9`), so `INVALID_PGN` also
+  covers a token count that differs from the moves read. Annotated PGN (comments, variations) skips this check.
+- **`TOO_LONG` (400 plies) landed in phase 1**, since it is two lines next to the PGN parsing.
+- **Not yet done, as planned:** per-job time budget, engine restart and retry, graceful SIGTERM, the end-to-end CI
+  smoke test and the "queue full" and "broker down mid-consume" tests (phase 2).
 
 ## 15. Verify before implementing
 
