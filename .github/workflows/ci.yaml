@@ -106,7 +106,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends stockfish
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: analysis/uv.lock
