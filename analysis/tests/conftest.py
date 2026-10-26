@@ -6,7 +6,9 @@ import chess.engine
 import pytest
 import pytest_asyncio
 
-STOCKFISH = os.environ.get("STOCKFISH_PATH", "/usr/games/stockfish")
+from analysis.worker import default_stockfish_path
+
+STOCKFISH = default_stockfish_path()
 FIXTURES = Path(__file__).resolve().parents[2] / "contracts" / "analysis" / "v1"
 # Shallow depth keeps tests fast; they assert robust properties, not exact centipawns
 TEST_DEPTH = 8

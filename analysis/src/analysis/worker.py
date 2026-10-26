@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
@@ -27,14 +28,17 @@ REQUEST_QUEUE = "analysis.requests"
 RESULT_KEY = "result"
 
 
+def default_stockfish_path() -> str:
+    """STOCKFISH_PATH, else `stockfish` on PATH (Homebrew), else Debian's location (the image)."""
+    return os.environ.get("STOCKFISH_PATH") or shutil.which("stockfish") or "/usr/games/stockfish"
+
+
 @dataclass(frozen=True)
 class Settings:
     amqp_url: str = field(
         default_factory=lambda: os.environ.get("AMQP_URL", "amqp://chess:password@localhost/")
     )
-    stockfish_path: str = field(
-        default_factory=lambda: os.environ.get("STOCKFISH_PATH", "/usr/games/stockfish")
-    )
+    stockfish_path: str = field(default_factory=default_stockfish_path)
     engine_depth: int = field(default_factory=lambda: int(os.environ.get("ENGINE_DEPTH", "16")))
     # Seconds per position; 0 disables the cap (depth only, deterministic)
     engine_position_timeout: float = field(

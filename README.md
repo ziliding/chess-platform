@@ -204,6 +204,9 @@ docker run --rm -e AMQP_TEST_URL=amqp://chess:password@host.docker.internal:5672
   -v "$PWD/contracts:/contracts:ro" analysis-test
 ```
 
+To run them with `uv run pytest` in `analysis/` instead, install Stockfish (`brew install stockfish`; it is found on
+`PATH`, or set `STOCKFISH_PATH`) and keep Docker running: the worker tests start a RabbitMQ themselves.
+
 Integration tests (`*IT`) start PostgreSQL, Redis, and RabbitMQ with Testcontainers and apply the migrations with
 Flyway, so they only need a running Docker daemon. `WebSocketRelayIT` starts two backend instances against one RabbitMQ
 and checks that a move made on one reaches a player connected to the other.
