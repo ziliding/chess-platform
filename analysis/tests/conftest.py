@@ -20,15 +20,25 @@ def amqp_url() -> Iterator[str]:
     if url := os.environ.get("AMQP_TEST_URL"):
         yield url
         return
-    from testcontainers.community.rabbitmq import RabbitMqContainer
+    from testcontainers.core.container import DockerContainer
+    from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
-    with RabbitMqContainer("rabbitmq:4.1-management") as rabbit:
-        yield f"amqp://guest:guest@{rabbit.get_container_host_ip()}:{rabbit.get_exposed_port(5672)}/"
+    # Not `guest`: RabbitMQ only lets it connect from the broker's own host
+    rabbit = (
+        DockerContainer("rabbitmq:4.1-management")
+        .with_env("RABBITMQ_DEFAULT_USER", "chess")
+        .with_env("RABBITMQ_DEFAULT_PASS", "password")
+        .with_exposed_ports(5672)
+        .waiting_for(LogMessageWaitStrategy("Server startup complete"))
+    )
+    with rabbit:
+        yield f"amqp://chess:password@{rabbit.get_container_host_ip()}:{rabbit.get_exposed_port(5672)}/"
 
 
 @pytest_asyncio.fixture
 async def engine() -> AsyncIterator[chess.engine.UciProtocol]:
-    _, engine = await chess.engine.popen_uci(STOCKFISH)
+    transport, engine = await chess.engine.popen_uci(STOCKFISH)
     await engine.configure({"Threads": 1, "Hash": 16})
     yield engine
     await engine.quit()
+    transport.close()

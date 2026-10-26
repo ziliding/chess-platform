@@ -13,13 +13,13 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28",
+    "httpx2>=2",
     "pyrefly>=1.4",
     "pytest>=9",
     "pytest-asyncio>=1",
     "pytest-cov>=7",
     "ruff>=0.17",
-    "testcontainers[rabbitmq]>=4.15",
+    "testcontainers>=4.15",
 ]
 
 [build-system]
@@ -43,4 +43,9 @@ search-path = ["src", "."]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+filterwarnings = [
+    "error",
+    # python-chess keeps a deprecated alias at import; nothing in this project can change that
+    "ignore:'asyncio.DefaultEventLoopPolicy' is deprecated:DeprecationWarning:chess.engine",
+]
 pythonpath = ["src"]

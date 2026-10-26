@@ -55,7 +55,7 @@ class Worker:
 
     async def run(self) -> None:
         """Serve until cancelled; reconnect to the broker and wait for Spring to declare the queue."""
-        _, engine = await chess.engine.popen_uci(self.settings.stockfish_path)
+        transport, engine = await chess.engine.popen_uci(self.settings.stockfish_path)
         await engine.configure({"Threads": 1, "Hash": 64})
         self._engine = engine
         try:
@@ -71,6 +71,7 @@ class Worker:
         finally:
             self.ready = False
             await engine.quit()
+            transport.close()
 
     async def _consume(self) -> None:
         connection = await aio_pika.connect_robust(self.settings.amqp_url)
