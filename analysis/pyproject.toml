@@ -19,7 +19,7 @@ dev = [
     "pytest-asyncio>=1",
     "pytest-cov>=7",
     "ruff>=0.17",
-    "testcontainers>=4.15",
+    "testcontainers[rabbitmq]>=4.15",
 ]
 
 [build-system]

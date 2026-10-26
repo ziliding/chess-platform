@@ -20,7 +20,7 @@ def amqp_url() -> Iterator[str]:
     if url := os.environ.get("AMQP_TEST_URL"):
         yield url
         return
-    from testcontainers.rabbitmq import RabbitMqContainer
+    from testcontainers.community.rabbitmq import RabbitMqContainer
 
     with RabbitMqContainer("rabbitmq:4.1-management") as rabbit:
         yield f"amqp://guest:guest@{rabbit.get_container_host_ip()}:{rabbit.get_exposed_port(5672)}/"
