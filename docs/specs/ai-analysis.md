@@ -600,11 +600,11 @@ them.
 | Frontend             | The analysis page's state logic (each row of §8); subscribe before GET; GET again on reconnect and at the deadline                                                                                                                                                                                                                                                                                                                                            | vitest, like `websocketService.test.ts`                                                                                                       |
 | End to end (phase 2) | The smoke scenario already ends with a logged-in player whose game has just been archived, so its last step requests analysis of that match. `LOADTEST_EXPECT_ANALYSIS` sets what that step checks. **Happy path:** with `completed`, it polls GET until the analysis is COMPLETED (up to 60 s). **Failure path:** a second CI step runs `docker compose stop analysis`, then runs the smoke again with `unavailable`, and expects `503 ANALYSIS_UNAVAILABLE` | `ChessGameSimulation` and `.github/workflows/ci.yaml`, `loadtest-smoke` job                                                                   |
 
-**CI** gets a new `analysis` job. It builds the image's `test` stage, which has the same Stockfish as production, and
-runs `ruff check`, `ruff format --check`, `pyrefly check`, and `pytest --cov-fail-under=80` inside it. The worker tests need a
-broker: CI provides a RabbitMQ service container and passes its URL in `AMQP_TEST_URL`; without that variable the tests
-start one with testcontainers. The engine eval joins it in phase 3. The existing backend tests must keep passing once the AMQP
-starter is on the classpath.
+**CI** gets a new `analysis` job. It runs on the runner, like `uv run pytest` locally: `uv sync --frozen`, then `ruff check`,
+`ruff format --check`, `pyrefly check` and `pytest --cov-fail-under=80`, with the distribution's `stockfish` package installed by
+apt. The worker tests start their own RabbitMQ with testcontainers, so CI exercises the same path as a developer's
+machine. The image's `test` stage remains for running the checks against the exact shipped Stockfish by hand. The engine
+eval joins the job in phase 3. The existing backend tests must keep passing once the AMQP starter is on the classpath.
 
 ---
 

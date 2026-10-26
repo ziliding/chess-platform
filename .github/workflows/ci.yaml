@@ -88,40 +88,43 @@ jobs:
       - name: Build
         run: npm run build
 
-  # Lint, types and tests run inside the image's test stage, so they use the same Stockfish that ships
+  # Runs on the runner, like `uv run pytest` locally: the worker tests start their own RabbitMQ with testcontainers
   analysis:
     name: Analysis service
     runs-on: ubuntu-latest
 
-    services:
-      # The worker tests talk to a real broker; the user must not be `guest`, which RabbitMQ limits to localhost
-      rabbitmq:
-        image: rabbitmq:4.1
-        env:
-          RABBITMQ_DEFAULT_USER: chess
-          RABBITMQ_DEFAULT_PASS: password
-        ports:
-          - 5672:5672
-        options: >-
-          --health-cmd "rabbitmq-diagnostics -q check_port_connectivity"
-          --health-interval 5s
-          --health-timeout 10s
-          --health-retries 10
+    defaults:
+      run:
+        working-directory: analysis
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Build the test image
-        run: docker build --target test --tag analysis-test analysis
+      - name: Install Stockfish
+        # The distribution's package (the image uses Debian's); it installs the binary in /usr/games
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends stockfish
 
-      - name: Lint, type check and test
-        # The contracts are shared with the backend tests and live outside the image
-        run: >-
-          docker run --rm --network host
-          --env AMQP_TEST_URL=amqp://chess:password@localhost:5672/
-          --volume "$PWD/contracts:/contracts:ro"
-          analysis-test
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+          cache-dependency-glob: analysis/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run pyrefly check
+
+      - name: Test
+        run: uv run pytest --cov=analysis --cov-fail-under=80
 
   # Plays one full game through the gateway, so it catches breakage between services that unit tests miss
   loadtest-smoke:
