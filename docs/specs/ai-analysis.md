@@ -1,6 +1,6 @@
 # AI game analysis
 
-**Status:** Phase 1 is built (see "Phase 1 as built" in §14). Phases 2–4 are planned and not started. Phase 5 and §16 are a sketch of later work, not a commitment.
+**Status:** Phases 1 and 2 are built (see "Phase 1 as built" and "Phase 2 as built" in §14). Phases 3 and 4 are planned and not started. Phase 5 and §16 are a sketch of later work, not a commitment.
 **Written:** 2026-10-26
 
 Players can request an analysis of an archived game. They get an evaluation for every move, a list of mistakes with
@@ -590,7 +590,7 @@ them.
 | Python unit          | Win chances, thresholds, mate and terminal scoring, POV sign, template summary; table-driven                                                                                                                                                                                                                                                                                                                                                                  | `pytest`, no I/O                                                                                                                              |
 | Python contract      | Golden fixtures validate and round-trip; unknown fields are ignored; an unknown `schemaVersion` gives the right error                                                                                                                                                                                                                                                                                                                                         | `pytest`                                                                                                                                      |
 | Python engine        | Real Stockfish on short known games. Scholar's mate: `3...Nf6` is a BLUNDER with `bestSan` `g6` or `Qe7`/`Qf6`. A stalemate game; a promotion game; the platform PGN                                                                                                                                                                                                                                                                                          | `pytest`, with the distribution's Stockfish. Tests assert robust properties, not exact centipawns |
-| Python worker        | Request → result on a real broker; `INVALID_PGN` → FAILED result; non-JSON → DLQ; expired deadline → dropped. Phase 2 adds: engine crash → retry → `ENGINE_ERROR`; worker killed 3× → DLQ                                                                                                                                                                                                                                                                     | `testcontainers` RabbitMQ (`rabbitmq:4.1-management`, the same image as compose)                                                              |
+| Python worker        | Request → result on a real broker; `INVALID_PGN` → FAILED result; non-JSON → DLQ; expired deadline → dropped. Phase 2 adds: engine crash → retry → `ENGINE_ERROR`; budget → `BUDGET_EXCEEDED`; SIGTERM finishes the job; worker killed 4× → DLQ                                                                                                                                                                                                                                                                     | `testcontainers` RabbitMQ (`rabbitmq:4.1-management`, the same image as compose)                                                              |
 | Python LLM (phase 4) | Valid output; invalid JSON → repair → fallback; timeout → fallback; circuit breaker; usernames never in the prompt                                                                                                                                                                                                                                                                                                                                            | A fake OpenAI-compatible server in the test (`httpx.MockTransport`)                                                                           |
 | Java unit            | `AnalysisService` decisions: 403, 429, existing row → 200, 0 consumers → 503, nack → 503 and FAILED; result handling ignores stale and duplicate results; sweeper                                                                                                                                                                                                                                                                                             | Mockito, like `MatchServiceTest`                                                                                                              |
 | Java WebMvc          | The status and ProblemDetail mapping for both endpoints; auth required                                                                                                                                                                                                                                                                                                                                                                                        | `@WebMvcTest`, like `GameControllerWebMvcTest`                                                                                                |
@@ -710,7 +710,7 @@ This phase fixes the full contract and topology, and delivers the happy path plu
   - the per-job budget (→ `BUDGET_EXCEEDED`);
   - the 400-ply cap (→ `TOO_LONG`);
   - graceful SIGTERM;
-  - a test that kills the worker 3 times and expects the message in the DLQ.
+  - a test that kills the worker until the message is in the DLQ (4 times, see "Phase 2 as built").
 - **Spring:**
   - a nack from the full queue → `503 ANALYSIS_BUSY`;
   - a broker outage at publish time → `503` with `FAILED / UNAVAILABLE`;
@@ -766,14 +766,40 @@ Deviations from the draft above, and the checks phase 1 settled:
 - **Not yet done, as planned:** per-job time budget, engine restart and retry, graceful SIGTERM, the end-to-end CI
   smoke test and the "queue full" and "broker down mid-consume" tests (phase 2).
 
+### Phase 2 as built
+
+- **Delivery limit (§15.2).** On RabbitMQ 4.1 quorum queues a consumer that disconnects without acking counts as a
+  delivery, like a nack. `x-delivery-limit=3` allows three redeliveries, so the request is dead-lettered when the
+  **fourth** worker dies on it; the worker test kills four real worker processes. A graceful stop that has to give a
+  job back counts the same way, so the SIGTERM handler just lets the connection close.
+- **Engine failures.** A crash (`EngineError`) or a hang is retried once on a new engine, then `ENGINE_ERROR`. A hang
+  is a position that takes 10 s past its time cap; with no time cap (the eval) only the job budget catches one. The
+  engine is also replaced after `BUDGET_EXCEEDED`, because python-chess cannot use an engine whose command was
+  cancelled.
+- **Budget.** `JOB_BUDGET_SECONDS` (default 120) or the time left to the deadline, whichever is less, around both
+  tries.
+- **SIGTERM.** uvicorn runs the lifespan shutdown: the worker cancels its consumer, waits up to 50 s for the job in
+  progress (below compose's 60 s `stop_grace_period`), then closes. A job past that is redelivered. uvicorn exits with
+  the signal after a clean shutdown, not 0.
+- **Spring retry setting.** Spring Boot 4 no longer reads `retry.max-attempts`; phase 1's setting was ignored, and the
+  listener made 4 attempts. It is now `max-retries: 2` (3 attempts), which the "database down" IT pins.
+- **Spring tests.** A full queue (a consumer that holds one job while 1100 messages fill the backlog) gives `503
+  ANALYSIS_BUSY` and a `FAILED / UNAVAILABLE` row. Duplicate, late and stale results change nothing and push nothing.
+  A database failure while a result is applied is retried, dead-lettered, and the job then times out. That IT makes
+  Postgres refuse the update with a trigger instead of mocking the repository, because every cached test context has
+  a listener on `analysis.results`. A broker outage at publish time is a unit test: the window between the
+  consumer check and the publish is too short to hit with a real broker.
+- **Frontend.** The GET at the deadline and the GET after every reconnect were already built and tested in phase 1;
+  phase 2 only aligned the `UNAVAILABLE` copy with the refusal message.
+- **Smoke test.** `LOADTEST_EXPECT_ANALYSIS` is unset by default, so the larger load tests do not flood the worker.
+
 ## 15. Open checks
 
 Checks the remaining phases start with. The ones phase 1 needed are settled and recorded under "Phase 1 as built".
 
 1. **Lichess export (phase 3).** Check that the game export includes both `[%eval]` and the judgment glyphs, and decide
    how to compare our mate handling with lila's `MateCreated` and `MateLost` rules (§14, "Phase 1 as built").
-2. **RabbitMQ 4.1 quorum queues (phase 2).** Check how `x-delivery-limit` counts consumer disconnects compared with
-   nacks. This decides how the SIGTERM handler returns an unfinished job.
+2. ~~**RabbitMQ 4.1 quorum queues (phase 2).**~~ Settled: disconnects count like nacks (see "Phase 2 as built").
 3. **Stockfish version (phase 3).** The eval report names the engine version, and E2 (determinism) needs the same
    version for both runs. CI installs the distribution's package, so check the version it gets matches the image's, or
    pin one binary for both.

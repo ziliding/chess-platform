@@ -1,5 +1,6 @@
 """Stockfish analysis of a game: per-ply evals, move classification and a deterministic template summary."""
 
+import asyncio
 import io
 import math
 import re
@@ -115,18 +116,27 @@ class Analyzed:
     summary: Summary
 
 
+# How long past its time cap the engine may take to answer before it counts as hung
+HANG_GRACE_SECONDS = 10
+
+
 async def analyze(
     engine: chess.engine.UciProtocol, pgn: str, depth: int, position_timeout: float, game_token: object
 ) -> Analyzed:
-    """Analyze every position of the game. `position_timeout` of 0 means depth only (deterministic)."""
+    """Analyze every position of the game. `position_timeout` of 0 means depth only (deterministic).
+
+    Raises TimeoutError if the engine hangs on a position. Without a time cap, the job budget catches hangs.
+    """
     board, moves, result = parse_game(pgn)
     limit = chess.engine.Limit(depth=depth, time=position_timeout or None)
+    hang_timeout = position_timeout + HANG_GRACE_SECONDS if position_timeout else None
 
     async def evaluate(position: chess.Board) -> tuple[Scored, chess.Move | None]:
         terminal = score_terminal(position)
         if terminal is not None:
             return terminal, None
-        info = await engine.analyse(position, limit, game=game_token)
+        async with asyncio.timeout(hang_timeout):
+            info = await engine.analyse(position, limit, game=game_token)
         pv = info.get("pv")
         return score_from_engine(info["score"]), pv[0] if pv else None
 

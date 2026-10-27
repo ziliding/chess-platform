@@ -67,7 +67,10 @@ describe('degraded states', () => {
     expect(failureNotice('BUDGET_EXCEEDED')).toEqual({ text: 'Analysis failed.', retryable: true });
     expect(failureNotice('INVALID_PGN')).toEqual({ text: "This game can't be analyzed.", retryable: false });
     expect(failureNotice('TOO_LONG').retryable).toBe(false);
-    expect(failureNotice('UNAVAILABLE')).toEqual({ text: 'Analysis is temporarily unavailable.', retryable: true });
+    expect(failureNotice('UNAVAILABLE')).toEqual({
+      text: 'Analysis is temporarily unavailable. Try again in a few minutes.',
+      retryable: true,
+    });
     // A code from a newer server is treated as a temporary problem
     expect(failureNotice('SOMETHING_NEW').retryable).toBe(true);
   });
