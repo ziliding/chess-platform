@@ -473,7 +473,7 @@ spring.rabbitmq:
   template.mandatory: true
   listener.simple:
     default-requeue-rejected: false
-    retry: { enabled: true, max-attempts: 3, initial-interval: 1s, multiplier: 2 }
+    retry: { enabled: true, max-retries: 2, initial-interval: 1s, multiplier: 2 }  # 3 attempts
 ```
 
 On the Python side:

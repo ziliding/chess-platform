@@ -25,7 +25,8 @@ spring:
         default-requeue-rejected: false
         retry:
           enabled: true
-          max-attempts: 3
+          # Three attempts in all (Boot 4 counts retries; it no longer reads max-attempts)
+          max-retries: 2
           initial-interval: 1s
           multiplier: 2
   data:
