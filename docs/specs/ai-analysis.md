@@ -1,8 +1,7 @@
 # AI game analysis
 
-**Status:** Approved. Phase 1 is implemented on `feat/ai-analysis-phase-1` (see "Phase 1 as built" in §14); phases 2–4 are not started.
-**Branch:** `feat/ai-analysis`
-**Date:** 2026-10-26
+**Status:** Phase 1 is built (see "Phase 1 as built" in §14). Phases 2–4 are planned and not started.
+**Written:** 2026-10-26
 
 Players can request an analysis of an archived game. They get an evaluation for every move, a list of mistakes with
 the better move, and a short summary. Stockfish provides the evaluations. In phase 4, an LLM explains them. The analysis
@@ -24,7 +23,7 @@ runs in a separate, stateless Python service. Spring stays the owner of games, u
 | Who may view          | Any authenticated user. This matches `GET /api/games/{id}/pgn` today.                                                                                                                       |
 | UI                    | A new review page, `/games/:matchId/analysis`, opened from History. It has a board you can step through, an annotated move list, the mistakes with the best move, and the summary.          |
 
-### Assumptions (defaults; say if any are wrong)
+### Assumptions
 
 - **Only archived matches can be analyzed.** Analysis is keyed on `match_records.id`. Live games, aborted games, and
   the planned guest casual games are never archived, so they cannot be analyzed.
@@ -33,7 +32,7 @@ runs in a separate, stateless Python service. Spring stays the owner of games, u
 - **The job topology shares RabbitMQ's default vhost `/` with the STOMP relay.** The `analysis.*` names cannot clash
   with the relay's use of `amq.topic`.
 - **The eval reference is Lichess games.** The eval uses Lichess games that carry Lichess's own computer analysis.
-  The Lichess database is CC0. Downloading them needs your OK at the start of phase 3.
+  The Lichess database is CC0. Downloading the games needs an explicit OK at the start of phase 3.
 
 ### Out of scope
 
@@ -675,7 +674,7 @@ PASS or FAIL. Its exit code is non-zero if any gated metric fails.
 
 Each phase is one PR into `main` and leaves CI green.
 
-### Phase 1: a Stockfish-only end-to-end slice
+### Phase 1: a Stockfish-only end-to-end slice (built)
 
 This phase fixes the full contract and topology, and delivers the happy path plus the main failure paths.
 
@@ -761,18 +760,14 @@ Deviations from the draft above, and the §15 checks phase 1 settled:
 - **Not yet done, as planned:** per-job time budget, engine restart and retry, graceful SIGTERM, the end-to-end CI
   smoke test and the "queue full" and "broker down mid-consume" tests (phase 2).
 
-## 15. Verify before implementing
+## 15. Open checks
 
-These are things to check at the start of the phase that needs them:
+Checks the remaining phases start with. The ones phase 1 needed are settled and recorded under "Phase 1 as built".
 
-1. **The Spring AMQP JSON converter.** Find the Jackson 3 converter class in Spring AMQP 4.x. Confirm that listener
-   type inference works without a `__TypeId__` header (phase 1).
-2. **Hibernate jsonb mapping with Jackson 3.** Check that it works. If it does not, use the `String` with
-   `AttributeConverter` fallback (phase 1).
-3. **Lichess.** Check the classification thresholds in lila's `Advice.scala` and the mate-handling differences. Check
-   that the game export includes both `[%eval]` and the judgment glyphs (phase 1 for the thresholds, phase 3 for the
-   export).
-4. **RabbitMQ 4.1 quorum queues.** Check how `x-delivery-limit` counts consumer disconnects compared with nacks. This
-   decides how the SIGTERM handler returns an unfinished job (phase 2).
-5. **Stockfish in the image.** Check which version the Debian `stockfish` package in `python:3.15-slim-trixie` has. The
-   results report it, and E2 needs the same version within a run (phase 1).
+1. **Lichess export (phase 3).** Check that the game export includes both `[%eval]` and the judgment glyphs, and decide
+   how to compare our mate handling with lila's `MateCreated` and `MateLost` rules (§14, "Phase 1 as built").
+2. **RabbitMQ 4.1 quorum queues (phase 2).** Check how `x-delivery-limit` counts consumer disconnects compared with
+   nacks. This decides how the SIGTERM handler returns an unfinished job.
+3. **Stockfish version (phase 3).** The eval report names the engine version, and E2 (determinism) needs the same
+   version for both runs. CI installs the distribution's package, so check the version it gets matches the image's, or
+   pin one binary for both.
