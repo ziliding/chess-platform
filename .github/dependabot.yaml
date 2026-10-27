@@ -22,9 +22,21 @@ updates:
           - "minor"
           - "patch"
 
+  - package-ecosystem: "uv"
+    directory: "/analysis"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      uv-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
   - package-ecosystem: "docker"
     directories:
       - "/"
+      - "/analysis"
       - "/backend"
       - "/frontend"
     schedule:
@@ -35,6 +47,8 @@ updates:
       - dependency-name: "node"
         update-types: [ "version-update:semver-major" ]
       - dependency-name: "eclipse-temurin"
+        update-types: [ "version-update:semver-major" ]
+      - dependency-name: "python"
         update-types: [ "version-update:semver-major" ]
     groups:
       docker:

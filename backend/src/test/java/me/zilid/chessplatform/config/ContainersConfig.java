@@ -16,7 +16,7 @@ public class ContainersConfig {
                 .withEnv("RABBITMQ_DEFAULT_PASS", "password")
                 .withCopyToContainer(
                         Transferable.of("[rabbitmq_management,rabbitmq_stomp]."), "/etc/rabbitmq/enabled_plugins")
-                .withExposedPorts(61613);
+                .withExposedPorts(61613, 5672);
     }
 
     @Bean
@@ -38,6 +38,10 @@ public class ContainersConfig {
             registry.add("app.websocket.relay.port", () -> rabbitMQContainer.getMappedPort(61613));
             registry.add("app.websocket.relay.login", () -> "chess");
             registry.add("app.websocket.relay.passcode", () -> "password");
+            registry.add("spring.rabbitmq.host", rabbitMQContainer::getHost);
+            registry.add("spring.rabbitmq.port", () -> rabbitMQContainer.getMappedPort(5672));
+            registry.add("spring.rabbitmq.username", () -> "chess");
+            registry.add("spring.rabbitmq.password", () -> "password");
         };
     }
 }

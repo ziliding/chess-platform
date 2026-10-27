@@ -88,6 +88,44 @@ jobs:
       - name: Build
         run: npm run build
 
+  # Runs on the runner, like `uv run pytest` locally: the worker tests start their own RabbitMQ with testcontainers
+  analysis:
+    name: Analysis service
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: analysis
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Stockfish
+        # The distribution's package (the image uses Debian's); it installs the binary in /usr/games
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends stockfish
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: analysis/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run pyrefly check
+
+      - name: Test
+        run: uv run pytest --cov=analysis --cov-fail-under=80
+
   # Plays one full game through the gateway, so it catches breakage between services that unit tests miss
   loadtest-smoke:
     name: Load test (smoke)

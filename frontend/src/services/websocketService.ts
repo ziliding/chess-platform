@@ -1,5 +1,5 @@
 import { Client, IMessage } from '@stomp/stompjs';
-import { GameState, ChatMessage } from '../types';
+import { Analysis, GameState, ChatMessage } from '../types';
 
 export class WebSocketService {
   private client: Client | null = null;
@@ -149,3 +149,24 @@ export class WebSocketService {
 }
 
 export const websocketService = new WebSocketService();
+
+// Analysis results are pushed to the player's private /user/topic/analysis. This is a separate connection from a
+// game's: it joins no game. Returns a function that closes it.
+export function subscribeToAnalysis(onUpdate: (analysis: Analysis) => void, onConnected: () => void): () => void {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const client = new Client({
+    brokerURL: `${protocol}//${window.location.host}/ws`,
+    reconnectDelay: 5000,
+    heartbeatIncoming: 4000,
+    heartbeatOutgoing: 4000,
+  });
+  // Runs again after every reconnection, which drops the subscription
+  client.onConnect = () => {
+    client.subscribe('/user/topic/analysis', (message: IMessage) => {
+      onUpdate(JSON.parse(message.body));
+    });
+    onConnected();
+  };
+  client.activate();
+  return () => void client.deactivate();
+}

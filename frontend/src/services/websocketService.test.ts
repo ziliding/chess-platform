@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { WebSocketService } from './websocketService';
+import { WebSocketService, subscribeToAnalysis } from './websocketService';
 import type { ChatMessage, GameState } from '../types';
 
 interface TestClient {
@@ -199,5 +199,49 @@ describe('WebSocketService', () => {
     expect(client.deactivate).toHaveBeenCalledOnce();
     expect(() => service.offerDraw('game-1')).toThrow('WebSocket not connected');
     expect(() => service.claimTimeout('game-1')).toThrow('WebSocket not connected');
+  });
+});
+
+describe('subscribeToAnalysis', () => {
+  beforeEach(() => {
+    stomp.clients.length = 0;
+    vi.stubGlobal('window', { location: { protocol: 'https:', host: 'chess.example' } });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('listens to the private analysis queue without joining a game', () => {
+    const onUpdate = vi.fn();
+    subscribeToAnalysis(onUpdate, vi.fn());
+    const client = latestClient();
+
+    expect(client.brokerURL).toBe('wss://chess.example/ws');
+    expect(client.activate).toHaveBeenCalled();
+
+    client.onConnect();
+    expect([...client.subscriptions.keys()]).toEqual(['/user/topic/analysis']);
+    expect(client.publish).not.toHaveBeenCalled();
+
+    client.subscriptions.get('/user/topic/analysis')?.({ body: '{"matchId":"m1","status":"COMPLETED"}' });
+    expect(onUpdate).toHaveBeenCalledWith({ matchId: 'm1', status: 'COMPLETED' });
+  });
+
+  it('reports every connection, so the caller can read the state again after a reconnect', () => {
+    const onConnected = vi.fn();
+    subscribeToAnalysis(vi.fn(), onConnected);
+    const client = latestClient();
+
+    client.onConnect();
+    client.onConnect();
+
+    expect(onConnected).toHaveBeenCalledTimes(2);
+  });
+
+  it('closes the connection', () => {
+    const close = subscribeToAnalysis(vi.fn(), vi.fn());
+    close();
+    expect(latestClient().deactivate).toHaveBeenCalled();
   });
 });

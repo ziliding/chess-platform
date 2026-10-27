@@ -1,9 +1,11 @@
 package me.zilid.chessplatform.controller.advice;
 
 import java.util.*;
+import me.zilid.chessplatform.exception.AnalysisUnavailableException;
 import me.zilid.chessplatform.exception.FriendAlreadyExistsException;
 import me.zilid.chessplatform.exception.GameIsOverException;
 import me.zilid.chessplatform.exception.GameNotFoundException;
+import me.zilid.chessplatform.exception.TooManyAnalysesException;
 import me.zilid.chessplatform.exception.UserNotFoundException;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -67,6 +69,18 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler({FriendAlreadyExistsException.class, GameIsOverException.class})
     public ProblemDetail handleConflict(RuntimeException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(AnalysisUnavailableException.class)
+    public ProblemDetail handleAnalysisUnavailable(AnalysisUnavailableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+        problem.setProperty("code", ex.getCode());
+        return problem;
+    }
+
+    @ExceptionHandler(TooManyAnalysesException.class)
+    public ProblemDetail handleTooManyAnalyses(TooManyAnalysesException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
     }
 
     @ExceptionHandler(BadCredentialsException.class)

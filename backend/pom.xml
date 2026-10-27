@@ -89,6 +89,12 @@
             <version>${springdoc.version}</version>
         </dependency>
 
+        <!-- AMQP client for analysis jobs and results (the STOMP relay above talks to the same RabbitMQ) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
         <!-- TCP client for the STOMP broker relay -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

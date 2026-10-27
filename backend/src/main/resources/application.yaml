@@ -13,6 +13,22 @@ spring:
   flyway:
     locations: classpath:db/migrations
     validate-migration-naming: true
+  rabbitmq:
+    # AMQP for analysis jobs. host, port, username and password must be set (the STOMP relay below has its own)
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        # A result that keeps failing is dead-lettered after the retries instead of being redelivered forever
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          # Three attempts in all (Boot 4 counts retries; it no longer reads max-attempts)
+          max-retries: 2
+          initial-interval: 1s
+          multiplier: 2
   data:
     web:
       pageable:
@@ -41,6 +57,12 @@ springdoc:
     enabled: false
 
 app:
+  analysis:
+    # How long a requested analysis may take, queueing included, before it is failed with TIMED_OUT
+    deadline: 3m
+    max-queued-per-user: 3
+    sweep:
+      interval: 15s
   allowed-origins: http://localhost:3000,http://frontend:3000
   websocket:
     relay:

@@ -3,7 +3,8 @@ import { apiErrorMessage } from '../services/errors';
 import { useAuth } from '../context/AuthContext';
 import { gameService } from '../services/gameService';
 import { MatchRecord, TIME_CONTROL_LABELS } from '../types';
-import { Trophy, Clock, Calendar, Download, Copy } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Trophy, Clock, Calendar, Download, Copy, Sparkles } from 'lucide-react';
 
 const History = () => {
   const { user } = useAuth();
@@ -240,6 +241,14 @@ const History = () => {
                             <Copy size={14} />
                             <span>{copiedGameId === game.id ? 'Copied!' : 'Copy'}</span>
                           </button>
+                          <Link
+                            to={`/games/${game.id}/analysis`}
+                            className="btn btn-secondary text-sm flex items-center space-x-1"
+                            title="Review this game with an engine"
+                          >
+                            <Sparkles size={14} />
+                            <span>Analyze</span>
+                          </Link>
                         </>
                       )}
                     </div>
