@@ -741,19 +741,19 @@ This phase fixes the full contract and topology, and delivers the happy path plu
 
 ### Phase 1 as built
 
-Deviations from the draft above, and the §15 checks phase 1 settled:
+Deviations from the draft above, and the checks phase 1 settled:
 
 - **`requestedAt` is not in `AnalysisResponse`.** Nothing needs it; `deadline` is enough.
 - **Analyze button for everyone.** Whether the viewer is a player is not available to the page without a new
   endpoint, so the server's 403 is shown instead.
 - **`GameAnalysis` is a read-only entity.** Every change is a conditional native statement in `GameAnalysisRepo`.
-  The jsonb `result` is a `String` with `@JdbcTypeCode(SqlTypes.JSON)`; it round-trips (§15.2 settled, no fallback).
-- **Converter (§15.1 settled).** `JacksonJsonMessageConverter(jsonMapper)` with `TypePrecedence.INFERRED`; the
+  The jsonb `result` is a `String` with `@JdbcTypeCode(SqlTypes.JSON)`; it round-trips, so the `AttributeConverter` fallback was not needed.
+- **Converter.** `JacksonJsonMessageConverter(jsonMapper)` with `TypePrecedence.INFERRED`; the
   contract test reads every fixture through that bean, as the listener does.
-- **Thresholds (§15.3, thresholds part settled).** 0.3, 0.2 and 0.1 match lila's `Advice.scala`. lila also has
+- **Thresholds.** 0.3, 0.2 and 0.1 match lila's `Advice.scala`. lila also has
   special rules for creating or losing a mate (`MateCreated`, `MateLost`, by centipawn range); this service
   counts a mate as +-1 winning chances instead. Phase 3 measures the difference.
-- **Stockfish (§15.5 settled).** The `python:3.15-slim-trixie` image has Stockfish 17.1.
+- **Stockfish.** The `python:3.15-slim-trixie` image has Stockfish 17.1.
 - **Python input check.** python-chess silently skips movetext it cannot tokenize (`2. Nf9`), so `INVALID_PGN` also
   covers a token count that differs from the moves read. Annotated PGN (comments, variations) skips this check.
 - **`TOO_LONG` (400 plies) landed in phase 1**, since it is two lines next to the PGN parsing.
