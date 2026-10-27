@@ -1,4 +1,4 @@
-FROM python:3.15-slim-trixie AS base
+FROM python:3.15-slim-trixie
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never PYTHONUNBUFFERED=1
 # Debian's package installs the binary in /usr/games
 RUN apt-get update \
@@ -7,7 +7,6 @@ RUN apt-get update \
 COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /bin/uv
 WORKDIR /app
 
-FROM base AS runtime
 ARG APP_USER=appuser
 ARG APP_UID=996
 RUN useradd --system --uid ${APP_UID} --no-create-home ${APP_USER}
@@ -17,6 +16,7 @@ COPY src ./src
 ENV PATH="/app/.venv/bin:$PATH" PYTHONPATH=/app/src
 USER ${APP_USER}
 EXPOSE 8000
+# Liveness only: /readyz also needs RabbitMQ and the declared queue, which an orchestrator should not restart us for
 HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=5 \
-    CMD python -c "import sys,urllib.request as u; sys.exit(u.urlopen('http://localhost:8000/readyz', timeout=3).status != 200)"
+    CMD python -c "import sys,urllib.request as u; sys.exit(u.urlopen('http://localhost:8000/healthz', timeout=3).status != 200)"
 CMD ["uvicorn", "analysis.main:app", "--host", "0.0.0.0", "--port", "8000"]

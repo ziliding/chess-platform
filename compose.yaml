@@ -111,13 +111,13 @@ services:
     profiles: [ app ]
     build:
       context: ./analysis
-      target: runtime
     networks:
       - backend
     environment:
       AMQP_URL: amqp://${RABBITMQ_USER:-chess}:${RABBITMQ_PASSWORD:-password}@rabbitmq:5672/
       ENGINE_DEPTH: ${ANALYSIS_ENGINE_DEPTH:-16}
-    # Lets a job in progress finish when the container is stopped
+    # Room for a job in progress to finish; until the worker handles SIGTERM (phase 2), a stop cancels it and
+    # RabbitMQ redelivers it
     stop_grace_period: 60s
     depends_on:
       rabbitmq:
