@@ -51,6 +51,7 @@ class Worker:
         self.settings = settings
         self.ready = False
         self._engine: chess.engine.UciProtocol | None = None
+        self._engine_transport: asyncio.SubprocessTransport | None = None
         self._connection: AbstractRobustConnection | None = None
 
     async def run(self) -> None:
@@ -58,6 +59,7 @@ class Worker:
         transport, engine = await chess.engine.popen_uci(self.settings.stockfish_path)
         await engine.configure({"Threads": 1, "Hash": 64})
         self._engine = engine
+        self._engine_transport = transport
         try:
             while True:
                 try:
@@ -94,11 +96,9 @@ class Worker:
     async def is_ready(self) -> bool:
         if not self.ready or self._engine is None or self._connection is None or self._connection.is_closed:
             return False
-        try:
-            await asyncio.wait_for(self._engine.ping(), timeout=2)
-        except Exception:  # noqa: BLE001
-            return False
-        return True
+        # Not a UCI ping: the protocol runs one command at a time, so a probe during a job times out, and the
+        # cancelled ping leaves python-chess's state corrupted and the job hung
+        return self._engine_transport is not None and self._engine_transport.get_returncode() is None
 
     async def handle(
         self,
