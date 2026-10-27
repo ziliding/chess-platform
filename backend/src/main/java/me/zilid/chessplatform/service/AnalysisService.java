@@ -56,7 +56,11 @@ public class AnalysisService {
 
     public static final String UNAVAILABLE = "UNAVAILABLE";
 
-    /** @param created true if this call queued a new job, so the caller should answer 202 */
+    /**
+     * The analysis for a request, and whether the request started it.
+     *
+     * @param created true if this call queued a new job, so the caller should answer 202
+     */
     public record RequestResult(AnalysisResponse analysis, boolean created) {}
 
     private final GameAnalysisRepo analysisRepo;
@@ -188,11 +192,11 @@ public class AnalysisService {
                     correlation);
             CorrelationData.Confirm confirm =
                     correlation.getFuture().get(CONFIRM_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-            if (confirm.isAck() && correlation.getReturned() == null) {
+            if (confirm.ack() && correlation.getReturned() == null) {
                 return;
             }
             // A nack with a reachable broker means the queue is full; a returned message was not routed anywhere
-            if (!confirm.isAck()) {
+            if (!confirm.ack()) {
                 failure = AnalysisUnavailableException.BUSY;
             }
         } catch (InterruptedException e) {

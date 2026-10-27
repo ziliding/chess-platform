@@ -18,6 +18,6 @@ public record AnalysisResultMessage(
         AnalysisPayload.@Nullable Eval initialEval,
         @Nullable List<AnalysisPayload.Move> moves,
         AnalysisPayload.@Nullable Summary summary,
-        @Nullable Error error) {
-    public record Error(String code, String message) {}
+        @Nullable ErrorInfo error) {
+    public record ErrorInfo(String code, String message) {}
 }

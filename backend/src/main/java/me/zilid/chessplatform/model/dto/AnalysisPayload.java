@@ -14,6 +14,8 @@ public record AnalysisPayload(Engine engine, Eval initialEval, List<Move> moves,
     public record Eval(@Nullable Integer cp, @Nullable Integer mate) {}
 
     /**
+     * One played move, with the engine's best move and how much the played move cost.
+     *
      * @param classification BEST, GOOD, INACCURACY, MISTAKE or BLUNDER. A string, not an enum, so a value added by a
      *     newer analysis service does not break reading old messages.
      */
@@ -27,6 +29,10 @@ public record AnalysisPayload(Engine engine, Eval initialEval, List<Move> moves,
             double winChanceLoss,
             String classification) {}
 
-    /** @param source TEMPLATE or LLM */
+    /**
+     * A plain-language summary of the game.
+     *
+     * @param source TEMPLATE or LLM
+     */
     public record Summary(String text, String source) {}
 }

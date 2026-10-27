@@ -152,7 +152,7 @@ class AnalysisServiceTest {
 
     private static AnalysisResultMessage failed(UUID jobId, String code) {
         return new AnalysisResultMessage(
-                1, jobId, MATCH_ID, "FAILED", null, null, null, null, new AnalysisResultMessage.Error(code, "why"));
+                1, jobId, MATCH_ID, "FAILED", null, null, null, null, new AnalysisResultMessage.ErrorInfo(code, "why"));
     }
 
     @Test
