@@ -5,12 +5,14 @@
 ![Java 25](https://img.shields.io/badge/Java-25-orange)
 ![Spring Boot 4.1](https://img.shields.io/badge/Spring%20Boot-4.1-6db33f)
 ![React 19](https://img.shields.io/badge/React-19-61dafb)
+![Python 3.15](https://img.shields.io/badge/Python-3.15-3776ab)
 
 A real-time multiplayer chess platform with a chess engine written from scratch, live clocks, Elo ratings, and a
 backend that scales horizontally: any number of instances can serve the same game.
 
 Players create a game on a clock such as `5+3`, share its ID, and play over WebSockets. Others who open the same game
-watch it live and can chat. Finished games are rated, archived with their PGN, and listed in each player's history.
+watch it live and can chat. Finished games are rated, archived with their PGN, and listed in each player's history,
+where a player can have Stockfish review the game move by move.
 
 ---
 
@@ -31,6 +33,11 @@ watch it live and can chat. Finished games are rated, archived with their PGN, a
 - A K-factor that settles as players gain experience: 40 for a player's first 20 games, then 20 up to a 2100 rating,
   then 10
 - Game history with rating changes, and PGN you can download or copy
+
+**Review**
+
+- Engine analysis of any archived game on request: an evaluation for every move, the inaccuracies, mistakes and
+  blunders with the better move, and a short summary, shown on a board you can step through
 
 **Connect**
 
@@ -117,7 +124,7 @@ The design and its trade-offs are in [`docs/specs/ai-analysis.md`](docs/specs/ai
 ## Tech Stack
 
 | Area           | Technologies                                                                                           |
-|----------------|--------------------------------------------------------------------------------------------------------|
+| -------------- | ------------------------------------------------------------------------------------------------------ |
 | Backend        | Java 25 (virtual threads), Spring Boot 4.1, Spring Security, Spring WebSocket (STOMP), Spring Data JPA |
 | Data           | PostgreSQL 17.5 with Flyway migrations, Redis 8.6 with Spring Session                                  |
 | Messaging      | RabbitMQ 4.1: external STOMP broker for WebSockets, AMQP for analysis jobs                             |
@@ -144,7 +151,7 @@ run more or fewer instances, add `--scale backend=<n>` or change `deploy.replica
 the gateway picks up the change within about 10 seconds.
 
 | Service                         | URL                                           |
-|---------------------------------|-----------------------------------------------|
+| ------------------------------- | --------------------------------------------- |
 | Frontend                        | http://localhost:3000                         |
 | REST API                        | http://localhost:8080/api                     |
 | API documentation (dev profile) | http://localhost:8080/swagger-ui.html         |
@@ -167,6 +174,16 @@ same.
 To try a game, register two accounts and sign in from two browsers, or from a normal and a private window. Create a
 game on one, then join it from the other with the game ID.
 
+To try game analysis locally, also run the analysis service. It needs Stockfish (`brew install stockfish`) and uses the
+same RabbitMQ, which is why Compose publishes port 5672:
+
+```bash
+cd analysis
+uv run uvicorn analysis.main:app --port 8000
+```
+
+Without it, the backend still works: requesting an analysis answers "temporarily unavailable".
+
 The credentials in `compose.yaml` and `application-dev.yaml` are for local development only.
 
 ### Configuration
@@ -174,15 +191,15 @@ The credentials in `compose.yaml` and `application-dev.yaml` are for local devel
 The backend reads these environment variables. Templates: `.env.example` for Docker Compose, which sets them from a
 few credentials, and `backend/.env.example` for deploying the backend on its own.
 
-| Variable                                                   | Purpose                                                                                    |
-|------------------------------------------------------------|--------------------------------------------------------------------------------------------|
-| `SPRING_PROFILES_ACTIVE`                                   | `dev` locally: API docs, all actuator endpoints, debug logging. Unset in production.       |
-| `SPRING_DATASOURCE_URL`, `_USERNAME`, `_PASSWORD`          | PostgreSQL connection                                                                      |
-| `SPRING_DATA_REDIS_HOST`, `_PORT`                          | Redis connection                                                                           |
-| `APP_ALLOWED_ORIGINS`                                      | Comma-separated frontend origins allowed for HTTP and WebSocket requests                   |
-| `SPRING_RABBITMQ_HOST`, `_PORT`, `_USERNAME`, `_PASSWORD`  | RabbitMQ AMQP connection, for analysis jobs                                                |
-| `APP_WEBSOCKET_RELAY_ENABLED`                              | Route WebSocket messages through RabbitMQ. Required when running more than one instance.   |
-| `APP_WEBSOCKET_RELAY_HOST`, `_PORT`, `_LOGIN`, `_PASSCODE` | RabbitMQ STOMP connection                                                                  |
+| Variable                                                   | Purpose                                                                                  |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `SPRING_PROFILES_ACTIVE`                                   | `dev` locally: API docs, all actuator endpoints, debug logging. Unset in production.     |
+| `SPRING_DATASOURCE_URL`, `_USERNAME`, `_PASSWORD`          | PostgreSQL connection                                                                    |
+| `SPRING_DATA_REDIS_HOST`, `_PORT`                          | Redis connection                                                                         |
+| `APP_ALLOWED_ORIGINS`                                      | Comma-separated frontend origins allowed for HTTP and WebSocket requests                 |
+| `SPRING_RABBITMQ_HOST`, `_PORT`, `_USERNAME`, `_PASSWORD`  | RabbitMQ AMQP connection, for analysis jobs                                              |
+| `APP_WEBSOCKET_RELAY_ENABLED`                              | Route WebSocket messages through RabbitMQ. Required when running more than one instance. |
+| `APP_WEBSOCKET_RELAY_HOST`, `_PORT`, `_LOGIN`, `_PASSCODE` | RabbitMQ STOMP connection                                                                |
 
 ---
 
@@ -195,13 +212,29 @@ From `backend/`:
 ./mvnw verify   # also runs the integration tests
 ```
 
-The analysis service's checks run from `analysis/` with `uv run ruff check .`, `uv run pyrefly check` and
-`uv run pytest`. Install Stockfish first (`brew install stockfish`; it is found on `PATH`, or set `STOCKFISH_PATH`) and keep
-Docker running: the worker tests start a RabbitMQ themselves.
-
 Integration tests (`*IT`) start PostgreSQL, Redis, and RabbitMQ with Testcontainers and apply the migrations with
 Flyway, so they only need a running Docker daemon. `WebSocketRelayIT` starts two backend instances against one RabbitMQ
-and checks that a move made on one reaches a player connected to the other.
+and checks that a move made on one reaches a player connected to the other. `AnalysisAmqpIT` runs a whole analysis
+request against the real services, with a stand-in for the Python service, including a service that is down, a job
+nobody answers, and results that end up in the dead-letter queue.
+
+From `analysis/` with Python 3.15 and [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv sync
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+uv run pytest   # the checks above and this one run in CI
+```
+
+The engine tests need Stockfish: `brew install stockfish` (it is found on `PATH`, or set `STOCKFISH_PATH`). The worker
+tests start a RabbitMQ with Testcontainers, so keep Docker running; set `AMQP_TEST_URL` to use a broker you already
+have. pytest enforces 80% coverage.
+
+The messages between the backend and the analysis service are defined by the golden examples in
+`contracts/analysis/v1/`. The Java tests (`AnalysisContractTest`) and the Python tests (`test_contracts.py`) both check
+them, so a change to either side that breaks the contract fails a test.
 
 From `frontend/`:
 
@@ -227,14 +260,14 @@ PGN. Each player has its own socket, so the gateway can route the two players to
 keeps starting games until the duration has passed since it arrived. The types differ in their defaults and in what
 counts as a pass:
 
-| Type         | Players | Ramp | Duration | What it checks                                                                 | Passes when                    |
-|--------------|---------|------|----------|--------------------------------------------------------------------------------|--------------------------------|
-| `smoke`      | 2       | 0s   | one game | The script and the stack work at all. The default.                             | No request fails               |
-| `average`    | 100     | 30s  | 5m       | Typical load: ramp up, hold, ramp down                                         | <1% fail, p95 under 1 s        |
-| `stress`     | 300     | 1m   | 5m       | Well above typical load                                                        | <1% fail, p95 under 1 s        |
-| `spike`      | 400     | 10s  | one game | A sudden surge, such as a tournament start: logins, sockets, and broker relays | <1% fail, p95 under 1 s        |
-| `breakpoint` | 4000    | 10m  | 10m      | Capacity: players keep arriving until a game fails or a reply takes over 1 s   | Always; read the logged count  |
-| `soak`       | 100     | 1m   | 1h       | Leaks and growth over time in Redis, RabbitMQ, and PostgreSQL                  | <1% fail, p95 under 1 s        |
+| Type         | Players | Ramp | Duration | What it checks                                                                 | Passes when                   |
+| ------------ | ------- | ---- | -------- | ------------------------------------------------------------------------------ | ----------------------------- |
+| `smoke`      | 2       | 0s   | one game | The script and the stack work at all. The default.                             | No request fails              |
+| `average`    | 100     | 30s  | 5m       | Typical load: ramp up, hold, ramp down                                         | <1% fail, p95 under 1 s       |
+| `stress`     | 300     | 1m   | 5m       | Well above typical load                                                        | <1% fail, p95 under 1 s       |
+| `spike`      | 400     | 10s  | one game | A sudden surge, such as a tournament start: logins, sockets, and broker relays | <1% fail, p95 under 1 s       |
+| `breakpoint` | 4000    | 10m  | 10m      | Capacity: players keep arriving until a game fails or a reply takes over 1 s   | Always; read the logged count |
+| `soak`       | 100     | 1m   | 1h       | Leaks and growth over time in Redis, RabbitMQ, and PostgreSQL                  | <1% fail, p95 under 1 s       |
 
 The player counts are starting points. Set `average` to your expected peak and scale the others from it. A breakpoint
 run ends with a line like `Load Generator was forcefully stopped: Breakpoint: a game failed with 3200 players active`.
@@ -259,7 +292,7 @@ can tell them apart from real users. These
 variables override the type's defaults:
 
 | Variable              | Default                 | Purpose                                                              |
-|-----------------------|-------------------------|----------------------------------------------------------------------|
+| --------------------- | ----------------------- | -------------------------------------------------------------------- |
 | `LOADTEST_TYPE`       | `smoke`                 | One of the types above                                               |
 | `LOADTEST_TARGET_URL` | `http://localhost:3000` | Gateway or Vite dev server to test; `http://gateway:3000` in Compose |
 | `LOADTEST_USERS`      | per type                | Concurrent players, two per game                                     |
@@ -274,19 +307,26 @@ variables override the type's defaults:
 REST endpoints live under `/api`. With the dev profile, the full reference is at `/swagger-ui.html`.
 
 | Area                | Endpoints                                                                                                                                                                                                  |
-|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Accounts            | `POST /users` (register), `POST /login`, `POST /logout`, `GET /me`, `GET /users?search=`, `PUT` / `DELETE /users`                                                                                          |
 | Games               | `POST /games`, `POST /games/{gameId}/join`, `GET /games/{gameId}/state`                                                                                                                                    |
 | History and ratings | `GET /games/users/{userId}`, `GET /games/{matchId}/pgn`, `GET /users/{userId}/ratings`                                                                                                                     |
+| Analysis            | `POST /games/{matchId}/analysis` (a player of the game requests it), `GET /games/{matchId}/analysis`                                                                                                       |
 | Friends             | `GET /friends`, `GET /friends/received`, `GET /friends/sent`, `POST /friends/send/{userId}`, `POST /friends/accept/{friendRequestId}`, `PUT /friends/reject/{friendRequestId}`, `DELETE /friends/{userId}` |
 
-A finished game is archived as a match with its own ID, so `GET /games/{matchId}/pgn` takes the `id` of an entry
-from the game history, not the live game's ID.
+A finished game is archived as a match with its own ID, so `GET /games/{matchId}/pgn` and the analysis endpoints take
+the `id` of an entry from the game history, not the live game's ID.
+
+`POST /games/{matchId}/analysis` answers `202` for a newly queued job and `200` with the existing analysis if one is
+already queued or finished. Refusals use problem details: `403` for someone who did not play the game, `404` for an
+unknown game, `429` when the player already has 3 analyses running, and `503` with `code` `ANALYSIS_UNAVAILABLE` or
+`ANALYSIS_BUSY` when the analysis service is down or its queue is full. `GET` answers `404` until the game has been
+analyzed.
 
 The STOMP endpoint is `/ws`. Topic names use dots because RabbitMQ topic names cannot contain `/`.
 
 | Direction | Destination                                     | Purpose                                       |
-|-----------|-------------------------------------------------|-----------------------------------------------|
+| --------- | ----------------------------------------------- | --------------------------------------------- |
 | Send      | `/app/game/{gameId}/join`                       | Join as a player or spectator                 |
 | Send      | `/app/game/{gameId}/move`                       | Make a move, with an optional promotion piece |
 | Send      | `/app/game/{gameId}/flag`                       | Claim that the opponent's clock has run out   |
@@ -296,6 +336,7 @@ The STOMP endpoint is `/ws`. Topic names use dots because RabbitMQ topic names c
 | Subscribe | `/topic/game.{gameId}`                          | Game state, including both clocks             |
 | Subscribe | `/topic/game.{gameId}.chat`                     | Chat messages                                 |
 | Subscribe | `/user/topic/errors`                            | Errors for your own actions                   |
+| Subscribe | `/user/topic/analysis`                          | An analysis of your game finished or failed   |
 
 ---
 
@@ -315,7 +356,10 @@ chess-platform/
 │       │   ├── security/       # Spring Security setup and the session principal
 │       │   └── config/         # Infrastructure wiring, including the WebSocket broker
 │       └── resources/db/migrations/   # Flyway migrations
+├── analysis/                   # Stateless Python service: Stockfish analysis of archived games (uv, Dockerfile)
 ├── frontend/                   # React app: pages/, components/, services/, types/
+├── contracts/                  # Versioned message examples shared by the backend and analysis tests
+├── docs/specs/                 # Design documents
 ├── loadtest/                   # Gatling simulation that plays full games against the stack
 ├── .github/                    # CI workflow, Dependabot, and issue and PR templates
 ├── compose.yaml                # Local services; the app profile adds the full stack, loadtest the load test
@@ -327,6 +371,10 @@ chess-platform/
 - Dependencies point one way: `controller -> service -> repository`. The `chess` and `rating` packages are
   independent of Spring, persistence, and security. Controllers pass `Player` values or user IDs into services, not
   Spring Security principals.
+- The analysis service has no database and no state of its own: a job is a pure function of its message, so a message
+  delivered twice is harmless and the service scales by adding replicas. The backend decides everything else. Each state
+  change of an analysis is one conditional SQL statement, so concurrent instances cannot apply a result twice or
+  overwrite a retry.
 - Each backend package documents its responsibility in `package-info.java` and is `@NullMarked`. NullAway checks
   nullness at compile time.
 - Spring Boot applies the Flyway migrations at startup, in every environment including tests. When several instances
@@ -342,7 +390,9 @@ chess-platform/
 - Choose the promotion piece in the UI. The engine and API already support any piece; the board promotes to a queen.
 - Matchmaking by rating
 - Glicko-2 ratings
-- Game analysis and an AI opponent with Stockfish
+- AI game analysis, remaining phases (see [the spec](docs/specs/ai-analysis.md)): failure-path hardening, an accuracy
+  evaluation against Lichess's analysis, and LLM explanations of the mistakes
+- An AI opponent with Stockfish
 - Opening book
 - Tournaments
 
@@ -350,4 +400,4 @@ chess-platform/
 
 ## License
 
-[MIT](LICENSE) © 2026 zilid10
+[MIT](LICENSE) © 2026 ziliding
