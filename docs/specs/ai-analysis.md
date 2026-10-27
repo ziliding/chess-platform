@@ -1,6 +1,6 @@
 # AI game analysis
 
-**Status:** Phase 1 is built (see "Phase 1 as built" in §14). Phases 2–4 are planned and not started.
+**Status:** Phase 1 is built (see "Phase 1 as built" in §14). Phases 2–4 are planned and not started. Phase 5 and §16 are a sketch of later work, not a commitment.
 **Written:** 2026-10-26
 
 Players can request an analysis of an archived game. They get an evaluation for every move, a list of mistakes with
@@ -42,6 +42,7 @@ The following are not part of this work:
 - an accuracy % score;
 - an opening explorer;
 - an eval graph (it can come after phase 4);
+- live evaluation while a game is played (sketched in §16, not planned in phases 1–4);
 - separate RabbitMQ users per service;
 - DLQ-depth metrics and alerting;
 - localized summaries.
@@ -737,6 +738,11 @@ This phase fixes the full contract and topology, and delivers the happy path plu
 - Tests against the fake OpenAI-compatible server.
 - The L1–L7 eval: a `workflow_dispatch` job with the hosted key as a secret, and the report committed.
 
+### Phase 5 (sketch, not planned): live evaluation
+
+Evaluate single positions while games are played. It has a different load profile from phases 1–4, so it is a separate
+phase with its own capacity. The design and the open questions are in §16.
+
 ---
 
 ### Phase 1 as built
@@ -771,3 +777,75 @@ Checks the remaining phases start with. The ones phase 1 needed are settled and 
 3. **Stockfish version (phase 3).** The eval report names the engine version, and E2 (determinism) needs the same
    version for both runs. CI installs the distribution's package, so check the version it gets matches the image's, or
    pin one binary for both.
+
+---
+
+## 16. Scaling, cost and live evaluation (not built)
+
+Notes from the phase 1 review. Nothing here changes phases 1–4.
+
+### 16.1 Cost model
+
+- A game costs about 10–20 CPU-seconds (an estimate for a 40-move game; the phase 3 eval measures it). Replicas do
+  not change the cost per game, only how long jobs wait. The cost is provisioned capacity that sits idle between
+  bursts.
+- **Fewer idle cores:** scale on queue depth, down to zero (KEDA, ECS or Cloud Run workers). The worker is stateless
+  and the backlog is visible in RabbitMQ, so the same image runs unchanged.
+- **Less work per game:** a lower depth (12 is several times cheaper), an eval cache keyed by position, skipping
+  opening-book moves, and the existing per-position time cap.
+- **Cheaper compute:** spot or preemptible instances are safe, because the queue redelivers a job when its worker dies.
+- **No server CPU at all:** Stockfish in WebAssembly in the browser, as Lichess does for local analysis. It would make
+  the queue and the worker unnecessary, which is why it is not the design here: the server-side pipeline is the point
+  of this project.
+- **Burst behavior today:** with one replica, about 10–18 jobs finish inside the 3-minute deadline and the rest are
+  failed with `TIMED_OUT` (the worker drops jobs whose deadline has passed). That is acceptable for the expected
+  traffic; add replicas or scale to zero when it is not.
+
+### 16.2 Live evaluation (phase 5)
+
+Evaluate a position as moves are played. This is a different workload from batch analysis:
+
+| | Batch analysis (phases 1–4) | Live evaluation |
+|---|---|---|
+| Trigger | A queue message, on request | An HTTP request per position, or a per-move job |
+| Latency | Seconds to minutes | Under a second |
+| Load | Bursty; can wait in a queue | Constant; cannot wait |
+| Scales on | Queue depth, can be zero | Request rate, needs warm capacity |
+| Needs HTTP | No | Yes |
+
+Options, which can be combined:
+
+1. **Hidden pre-computation.** Evaluate each move in the background, shown to nobody. When a game ends and a player
+   asks for analysis, most positions are already evaluated, so the result is near-instant and the cost is spread across
+   the game. This stays on the queue, in a **separate lower-priority queue**, so a busy game cannot delay someone's
+   Analyze request.
+2. **Spectator evaluation bar,** delayed by a few moves.
+3. **Post-game only,** as built, plus an eval cache keyed by FEN.
+
+**Fair play.** Players must not see the engine's evaluation or best move during a live game; that is engine assistance.
+Only spectators (with a delay) or finished games may show it. Whichever option is built, the server enforces this, not
+the client.
+
+### 16.3 Splitting batch and live
+
+Run them as two services so each scales on its own:
+
+- **One codebase, one image, two entrypoints.** Shared code (contracts, classification, win-chance math, the Stockfish
+  wrapper) stays in `analysis/`. The batch service runs `python -m analysis.worker`; the live service runs
+  `uvicorn analysis.live:app`. Two repositories or packages would only duplicate code.
+- **The batch worker no longer needs FastAPI** once the HTTP routes live in the live service. It becomes a plain
+  asyncio consumer, and its container healthcheck becomes a non-HTTP check, such as a heartbeat file touched by the
+  consumer loop.
+- **The live service needs an engine pool.** One Stockfish process runs one search at a time, so concurrent requests
+  would queue behind each other. A small pool of engines with a semaphore keeps latency predictable.
+- **Separate capacity.** The live service must not share engine processes with the batch worker, or one slow
+  whole-game job would stall an evaluation bar update.
+
+### 16.4 Open questions for phase 5
+
+1. Hidden pre-computation, the spectator bar, or both?
+2. Per-move jobs through RabbitMQ, or an HTTP `POST /evaluate` per position? Request-reply over RabbitMQ is possible
+   but more machinery than HTTP for one position.
+3. Where evaluations live while a game is played: Redis with a short TTL is enough, since they are throwaway; the
+   `game_analyses` table is for finished games.
+4. Depth for live evaluation (probably 10–12 for the latency target).
