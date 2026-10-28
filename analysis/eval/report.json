@@ -1,0 +1,218 @@
+{
+  "engine": "Stockfish 17.1",
+  "depth": 16,
+  "metrics": [
+    {
+      "id": "E1",
+      "name": "Completion",
+      "value": "28/28 COMPLETED",
+      "criterion": "every game COMPLETED, 0 worker errors",
+      "passed": true
+    },
+    {
+      "id": "E2",
+      "name": "Determinism",
+      "value": "identical moves in both runs",
+      "criterion": "a second run gives byte-identical moves for every game",
+      "passed": true
+    },
+    {
+      "id": "E3",
+      "name": "Serious errors (MISTAKE or BLUNDER) vs Lichess",
+      "value": "recall 0.84 (162/194), precision 0.86 (162/188)",
+      "criterion": "recall >= 0.80 (was 0.85, lowered with sign-off 2026-10-27) and precision >= 0.80",
+      "passed": true
+    },
+    {
+      "id": "E4",
+      "name": "Blunder agreement",
+      "value": "78% of 125 Lichess blunders are ours; 2 labeled BEST or GOOD",
+      "criterion": ">= 75%, and at most 2 labeled BEST or GOOD (was 1, raised with sign-off 2026-10-27)",
+      "passed": true
+    },
+    {
+      "id": "E5",
+      "name": "Eval agreement",
+      "value": "median |cp difference| 15 over 1025 positions",
+      "criterion": "<= 50, where both are non-mate and |cp| <= 500",
+      "passed": true
+    },
+    {
+      "id": "E6",
+      "name": "Latency",
+      "value": "p95 job time 22.8s",
+      "criterion": "p95 <= 60 s (target <= 30 s)",
+      "passed": true
+    }
+  ],
+  "games": [
+    {
+      "game": "lichess-0z3mP6cN",
+      "status": "COMPLETED",
+      "plies": 60,
+      "seconds": 8.77
+    },
+    {
+      "game": "lichess-2Rt3Z9M5",
+      "status": "COMPLETED",
+      "plies": 64,
+      "seconds": 10.98
+    },
+    {
+      "game": "lichess-3m5zv1Vk",
+      "status": "COMPLETED",
+      "plies": 39,
+      "seconds": 5.29
+    },
+    {
+      "game": "lichess-4EMSkHTu",
+      "status": "COMPLETED",
+      "plies": 62,
+      "seconds": 14.45
+    },
+    {
+      "game": "lichess-5QsQ8Cp3",
+      "status": "COMPLETED",
+      "plies": 27,
+      "seconds": 9.27
+    },
+    {
+      "game": "lichess-8Pw6ookq",
+      "status": "COMPLETED",
+      "plies": 46,
+      "seconds": 10.64
+    },
+    {
+      "game": "lichess-9izSqUo9",
+      "status": "COMPLETED",
+      "plies": 101,
+      "seconds": 20.9
+    },
+    {
+      "game": "lichess-AJOqh22R",
+      "status": "COMPLETED",
+      "plies": 95,
+      "seconds": 8.12
+    },
+    {
+      "game": "lichess-BD5ftnrR",
+      "status": "COMPLETED",
+      "plies": 125,
+      "seconds": 11.31
+    },
+    {
+      "game": "lichess-IEzKEvcT",
+      "status": "COMPLETED",
+      "plies": 71,
+      "seconds": 7.88
+    },
+    {
+      "game": "lichess-Lm55Fufr",
+      "status": "COMPLETED",
+      "plies": 173,
+      "seconds": 15.89
+    },
+    {
+      "game": "lichess-P3ZITVxp",
+      "status": "COMPLETED",
+      "plies": 38,
+      "seconds": 7.37
+    },
+    {
+      "game": "lichess-Q8Kni4jL",
+      "status": "COMPLETED",
+      "plies": 71,
+      "seconds": 6.4
+    },
+    {
+      "game": "lichess-QjIjWhJC",
+      "status": "COMPLETED",
+      "plies": 95,
+      "seconds": 19.59
+    },
+    {
+      "game": "lichess-SZVqf5Ii",
+      "status": "COMPLETED",
+      "plies": 59,
+      "seconds": 16.76
+    },
+    {
+      "game": "lichess-Wwylp8rn",
+      "status": "COMPLETED",
+      "plies": 128,
+      "seconds": 23.38
+    },
+    {
+      "game": "lichess-ZjNGZsEJ",
+      "status": "COMPLETED",
+      "plies": 57,
+      "seconds": 15.86
+    },
+    {
+      "game": "lichess-ahYXRgBp",
+      "status": "COMPLETED",
+      "plies": 188,
+      "seconds": 30.28
+    },
+    {
+      "game": "lichess-fBjlu0qV",
+      "status": "COMPLETED",
+      "plies": 91,
+      "seconds": 14.54
+    },
+    {
+      "game": "lichess-fDRgcj6S",
+      "status": "COMPLETED",
+      "plies": 57,
+      "seconds": 17.56
+    },
+    {
+      "game": "lichess-g3bLb9fX",
+      "status": "COMPLETED",
+      "plies": 24,
+      "seconds": 6.89
+    },
+    {
+      "game": "lichess-haNWbocW",
+      "status": "COMPLETED",
+      "plies": 23,
+      "seconds": 6.89
+    },
+    {
+      "game": "lichess-nJJIXhCI",
+      "status": "COMPLETED",
+      "plies": 81,
+      "seconds": 12.85
+    },
+    {
+      "game": "lichess-q7ymIJFQ",
+      "status": "COMPLETED",
+      "plies": 43,
+      "seconds": 13.36
+    },
+    {
+      "game": "lichess-vyPxPj0e",
+      "status": "COMPLETED",
+      "plies": 34,
+      "seconds": 12.07
+    },
+    {
+      "game": "platform-1",
+      "status": "COMPLETED",
+      "plies": 95,
+      "seconds": 8.39
+    },
+    {
+      "game": "platform-2",
+      "status": "COMPLETED",
+      "plies": 125,
+      "seconds": 12.51
+    },
+    {
+      "game": "platform-3",
+      "status": "COMPLETED",
+      "plies": 101,
+      "seconds": 21.69
+    }
+  ]
+}
