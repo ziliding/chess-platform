@@ -1,7 +1,20 @@
 """The eval's own math: a bug here would print a false PASS."""
 
-from analysis.contracts import Classification, Eval, MoveAnalysis
-from eval.run import Compared, Reference, label_metrics, mismatches, references
+from analysis.contracts import AnalysisResult, Classification, Eval, MoveAnalysis
+from analysis.llm import Attempt
+from eval.run import (
+    Citation,
+    Compared,
+    Job,
+    Reference,
+    citations,
+    label_metrics,
+    llm_metrics,
+    mismatches,
+    references,
+    ungrounded,
+)
+from tests.conftest import FIXTURES
 
 
 def test_references_read_lichess_evals_and_judgment_glyphs():
@@ -60,3 +73,91 @@ def test_label_metrics_pass_on_full_agreement():
 
     assert all(m.passed for m in label_metrics(compared))
     assert mismatches(compared) == []
+
+
+TEMPLATE = AnalysisResult.model_validate_json((FIXTURES / "result.completed.json").read_text())
+LLM = AnalysisResult.model_validate_json((FIXTURES / "result.completed.llm.json").read_text())
+
+
+def test_citations_read_numbers_sides_and_squares():
+    text = (
+        "After 3.Qh5 and 3...Nf6?? White mates with Qxf7#; f7 was weak, 12…exd5 and O-O-O too, but 4.f3 not."
+    )
+
+    assert citations(text) == [
+        Citation(5, "Qh5"),
+        Citation(6, "Nf6"),
+        Citation(None, "Qxf7"),
+        # the bare f7 is a square
+        Citation(24, "exd5"),
+        Citation(None, "O-O-O"),
+        Citation(7, "f3"),
+    ]
+
+
+def test_an_eval_or_a_count_before_a_move_is_not_its_number():
+    # Sentences from the first hosted run, which the checker read as 6.Bxd5, 0.Rd4, 2.Bxb4 and 11.Kc5
+    text = (
+        "The position swings to -2.6. Bxd5 was better. It went to 0.0. Rd4 keeps the edge. "
+        "From -0.3 to +1.2. Bxb4 takes the pawn. It allowed a mate in 11. Kc5 avoids it, and ...Qd5 follows."
+    )
+
+    assert citations(text) == [
+        Citation(None, "Bxd5"),
+        Citation(None, "Rd4"),
+        Citation(None, "Bxb4"),
+        Citation(None, "Kc5"),
+        Citation(None, "Qd5"),
+    ]
+
+
+def test_grounding_accepts_the_played_and_the_best_move_at_that_ply():
+    moves = TEMPLATE.moves or []
+
+    assert ungrounded("3...Nf6?? lost; 3...g6 was best, and Qxf7# followed.", moves) == []
+    assert ungrounded("3.Nf6 and 4...Qxf7 and 3...Nc6 and Kh1", moves) == [
+        Citation(5, "Nf6"),  # Black's move, cited as White's
+        Citation(8, "Qxf7"),  # White's move, cited as Black's
+        Citation(6, "Nc6"),  # played, but at ply 4
+        Citation(None, "Kh1"),  # never played or best
+    ]
+
+
+def test_template_summaries_are_grounded():
+    """L6 on a real template summary: the checker must not flag the baseline."""
+    assert TEMPLATE.summary is not None and TEMPLATE.moves is not None
+    assert citations(TEMPLATE.summary.text) == [Citation(6, "Nf6"), Citation(6, "g6")]
+    assert ungrounded(TEMPLATE.summary.text, TEMPLATE.moves) == []
+
+
+def job(result: AnalysisResult, attempt: Attempt | None = None) -> Job:
+    return Job("g", result, 1.0, attempt)
+
+
+def test_llm_metrics_pass_on_good_output():
+    first = [job(LLM, Attempt(first_call_valid=True, seconds=4.0, tokens=900))] * 3
+
+    metrics = llm_metrics(first, [job(TEMPLATE)] * 3)
+
+    assert [m.id for m in metrics] == ["L1", "L2", "L3", "L4", "L5", "L6"]
+    assert all(m.passed for m in metrics), metrics
+    assert metrics[4].value == "p95 LLM step 4.0s; 900 tokens per game"
+
+
+def test_llm_metrics_catch_fallbacks_ungrounded_moves_and_long_text():
+    assert LLM.summary is not None
+    wordy = LLM.model_copy(
+        update={
+            "summary": LLM.summary.model_copy(update={"text": "Black castled with 7...O-O. " + "x " * 80})
+        }
+    )
+    first = [job(TEMPLATE, Attempt(seconds=30.0)), job(wordy, Attempt(first_call_valid=True, seconds=3.0))]
+
+    l1, l2, l3, l4, l5, l6 = llm_metrics(first, [job(TEMPLATE)])
+
+    assert not l1.passed and "1 on the template" in l1.value
+    assert not l2.passed and l2.value.startswith("80% (4/5) of citations grounded")
+    assert not l3.passed  # the turning point, 3...Nf6, is not in the summary
+    assert not l4.passed and l4.value.startswith("1 summaries over 80 words")
+    assert not l5.passed
+    assert l6.passed

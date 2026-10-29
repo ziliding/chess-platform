@@ -1,0 +1,48 @@
+name: LLM eval
+
+# By hand only: it calls a hosted LLM with the LLM_API_KEY secret (spec §12.3, L1-L6)
+on:
+  workflow_dispatch:
+    inputs:
+      base-url:
+        description: OpenAI-compatible endpoint
+        default: https://openrouter.ai/api/v1
+      model:
+        description: Model name at that endpoint
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  llm-eval:
+    name: LLM eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        working-directory: analysis
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Engine and LLM eval
+        # In the service image, like the engine eval in CI; fails if any of E1-E6 or L1-L6 fails
+        env:
+          LLM_BASE_URL: ${{ inputs.base-url }}
+          LLM_MODEL: ${{ inputs.model }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+        run: |
+          docker build --tag chess-analysis .
+          docker run --rm --user "$(id -u):$(id -g)" --volume "$PWD/eval:/app/eval" --workdir /app \
+            --env LLM_BASE_URL --env LLM_MODEL --env LLM_API_KEY \
+            chess-analysis python -m eval.run --llm
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: llm-eval-report
+          path: analysis/eval/report.*
