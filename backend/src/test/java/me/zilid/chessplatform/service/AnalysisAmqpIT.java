@@ -8,6 +8,7 @@ import com.rabbitmq.client.DefaultConsumer;
 import java.io.IOException;
 import java.lang.reflect.Type;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -388,11 +389,11 @@ class AnalysisAmqpIT {
     @Test
     void aResultThatCannotBeUnderstoodEndsUpInTheDeadLetterQueue() {
         drain("analysis.results.dlq");
-        rabbitTemplate.send("analysis", "result", json("{\"jobId\": \"not-a-uuid\"}".getBytes()));
+        rabbitTemplate.send("analysis", "result", json("{\"jobId\": \"not-a-uuid\"}".getBytes(StandardCharsets.UTF_8)));
         // Understood, but a COMPLETED result with no analysis in it: retried, then rejected
         String hollow = "{\"schemaVersion\":1,\"jobId\":\"%s\",\"matchId\":\"%s\",\"status\":\"COMPLETED\"}"
                 .formatted(UUID.randomUUID(), UUID.randomUUID());
-        rabbitTemplate.send("analysis", "result", json(hollow.getBytes()));
+        rabbitTemplate.send("analysis", "result", json(hollow.getBytes(StandardCharsets.UTF_8)));
 
         List<Message> deadLetters = new CopyOnWriteArrayList<>();
         await("both messages dead-lettered").atMost(TIMEOUT).until(() -> {
@@ -420,7 +421,7 @@ class AnalysisAmqpIT {
             // Past the limit, and confirmed, so the queue is rejecting publishes by the time the request comes
             rabbitTemplate.invoke(operations -> {
                 for (int i = 0; i < 1100; i++) {
-                    operations.send("analysis", "request", json("{}".getBytes()));
+                    operations.send("analysis", "request", json("{}".getBytes(StandardCharsets.UTF_8)));
                 }
                 operations.waitForConfirms(TIMEOUT.toMillis());
                 return null;
