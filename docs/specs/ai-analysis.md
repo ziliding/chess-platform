@@ -841,8 +841,9 @@ Deviations from the draft above, and the checks phase 1 settled:
     either: at depth 16, a change in search order moves about as many labels away from Lichess as toward it.
   - **lila's mate rules,** if adopted, would recover only 27.Rfd1 (recall 163/194, still 0.84). Their effect on
     precision was not measured.
-- **Not yet verified:** the eval has not run on the CI runner, where the E6 gate applies. Its added time to the job,
-  likely more than 10 minutes, is an estimate. The `--user` mapping for a Linux bind mount is also untested.
+- **On the CI runner** (first run, on PR #134): the eval step took 5.5 minutes, and the whole `analysis` job 6m19s.
+  E6's p95 is 19.9 s, under both the 60 s gate and the 30 s target. E1 to E5 match the local run, and the `--user`
+  mapping lets the container write the report to the Linux bind mount.
 - **Signed off 2026-10-27** ("Lower the threshold"), per §12: E3 recall from ≥ 0.85 to ≥ 0.80, with precision still
   ≥ 0.80, and E4 from at most 1 to at most 2 Lichess blunders labeled BEST or GOOD. Neither experiment above closes
   the gap to Lichess's deeper analysis at depth 16, and the run is deterministic, so the gate's job is to catch a
