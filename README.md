@@ -375,7 +375,8 @@ A finished game is archived as a match with its own ID, so `GET /matches/{matchI
 the `id` of an entry from the game history, not the live game's ID.
 
 `POST /matches/{matchId}/analysis` answers `202` for a newly queued job and `200` with the existing analysis if one is
-already queued or finished. Refusals use problem details: `403` for someone who did not play the game, `404` for an
+already queued or finished, or failed in a way a retry would repeat (`INVALID_PGN`, `TOO_LONG`). A failed analysis
+carries `retryable`, which says whether a new request would queue it again. Refusals use problem details: `403` for someone who did not play the game, `404` for an
 unknown game, `429` when the player already has 3 analyses running, and `503` with `code` `ANALYSIS_UNAVAILABLE` or
 `ANALYSIS_BUSY` when the analysis service is down or its queue is full. `GET` answers `404` until the game has been
 analyzed.

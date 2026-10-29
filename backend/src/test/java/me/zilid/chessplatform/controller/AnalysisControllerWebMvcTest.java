@@ -52,7 +52,8 @@ class AnalysisControllerWebMvcTest {
     private AnalysisService analysisService;
 
     private static AnalysisResponse queued() {
-        return new AnalysisResponse(MATCH_ID, AnalysisStatus.QUEUED, null, DEADLINE, null, null, null, null, null);
+        return new AnalysisResponse(
+                MATCH_ID, AnalysisStatus.QUEUED, null, false, DEADLINE, null, null, null, null, null);
     }
 
     private static AnalysisResponse completed() {
@@ -60,6 +61,7 @@ class AnalysisControllerWebMvcTest {
                 MATCH_ID,
                 AnalysisStatus.COMPLETED,
                 null,
+                false,
                 DEADLINE,
                 Instant.parse("2026-10-26T12:00:12Z"),
                 new AnalysisPayload.Engine("Stockfish 17.1", 16),

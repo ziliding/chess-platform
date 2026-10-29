@@ -1,6 +1,7 @@
 package me.zilid.chessplatform.repository;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,8 +16,9 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Every state change is a conditional statement that returns the number of rows it changed, so when several instances
- * race (a request, a result, the sweeper) exactly one of them sees 1 and the rest see 0.
+ * Used only by {@code AnalysisJobs}. Every state change is a conditional statement that returns the number of rows it
+ * changed, so when several instances race (a request, a result, the sweeper) exactly one of them sees 1 and the rest
+ * see 0.
  */
 @Repository
 public interface GameAnalysisRepo extends CrudRepository<GameAnalysis, UUID> {
@@ -44,7 +46,7 @@ public interface GameAnalysisRepo extends CrudRepository<GameAnalysis, UUID> {
             @Param("requestedBy") UUID requestedBy,
             @Param("deadline") Instant deadline);
 
-    /** Queue a retry of a failed analysis under a new job; 0 if it is no longer FAILED. */
+    /** Queue a retry of a failed analysis under a new job; 0 if it is not FAILED, or failed with a permanent code. */
     @Transactional
     @Modifying(clearAutomatically = true)
     @Query(nativeQuery = true, value = """
@@ -52,13 +54,14 @@ public interface GameAnalysisRepo extends CrudRepository<GameAnalysis, UUID> {
                     SET status = 'QUEUED', job_id = :jobId, requested_by = :requestedBy, deadline = :deadline,
                         result = NULL, error_code = NULL, completed_at = NULL,
                         updated_at = now(), version = version + 1
-                    WHERE match_id = :matchId AND status = 'FAILED'
+                    WHERE match_id = :matchId AND status = 'FAILED' AND error_code NOT IN (:permanent)
                     """)
     int requeueFailed(
             @Param("matchId") UUID matchId,
             @Param("jobId") UUID jobId,
             @Param("requestedBy") UUID requestedBy,
-            @Param("deadline") Instant deadline);
+            @Param("deadline") Instant deadline,
+            @Param("permanent") Collection<String> permanentErrorCodes);
 
     /** Store the result of a job that is still QUEUED; 0 for a duplicate, stale or late result. */
     @Transactional

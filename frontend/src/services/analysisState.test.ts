@@ -29,6 +29,7 @@ const analysis = (status: Analysis['status'], overrides: Partial<Analysis> = {})
   matchId: 'match-1',
   status,
   errorCode: null,
+  retryable: false,
   deadline: '2026-10-26T12:03:00Z',
   completedAt: null,
   engine: null,
@@ -63,18 +64,19 @@ describe('formatting', () => {
 });
 
 describe('degraded states', () => {
-  it('says what a failed analysis failed on, and whether trying again can help', () => {
-    expect(failureNotice('TIMED_OUT')).toEqual({ text: 'Analysis took too long.', retryable: true });
-    expect(failureNotice('ENGINE_ERROR')).toEqual({ text: 'Analysis failed.', retryable: true });
-    expect(failureNotice('BUDGET_EXCEEDED')).toEqual({ text: 'Analysis failed.', retryable: true });
-    expect(failureNotice('INVALID_PGN')).toEqual({ text: "This game can't be analyzed.", retryable: false });
-    expect(failureNotice('TOO_LONG').retryable).toBe(false);
-    expect(failureNotice('UNAVAILABLE')).toEqual({
+  it('says what a failed analysis failed on, and offers a retry only when the server allows one', () => {
+    const failed = (errorCode: string, retryable: boolean) => failureNotice({ errorCode, retryable });
+    expect(failed('TIMED_OUT', true)).toEqual({ text: 'Analysis took too long.', retryable: true });
+    expect(failed('ENGINE_ERROR', true)).toEqual({ text: 'Analysis failed.', retryable: true });
+    expect(failed('BUDGET_EXCEEDED', true)).toEqual({ text: 'Analysis failed.', retryable: true });
+    expect(failed('INVALID_PGN', false)).toEqual({ text: "This game can't be analyzed.", retryable: false });
+    expect(failed('UNAVAILABLE', true)).toEqual({
       text: 'Analysis is temporarily unavailable. Try again in a few minutes.',
       retryable: true,
     });
-    // A code from a newer server is treated as a temporary problem
-    expect(failureNotice('SOMETHING_NEW').retryable).toBe(true);
+    // A code from a newer server is shown as a temporary problem; the server still decides on the retry
+    expect(failed('SOMETHING_NEW', true).text).toContain('temporarily unavailable');
+    expect(failed('SOMETHING_NEW', false).retryable).toBe(false);
   });
 
   it('explains each way a request can be refused', () => {
@@ -177,7 +179,7 @@ describe('watchAnalysis', () => {
   });
 
   it('restarts a failed analysis only when the request that did it is adopted', async () => {
-    const { seen, push, watcher } = setup([analysis('FAILED', { errorCode: 'TIMED_OUT' })]);
+    const { seen, push, watcher } = setup([analysis('FAILED', { errorCode: 'TIMED_OUT', retryable: true })]);
     await flush();
     push(analysis('QUEUED'));
     expect(seen.map((a) => a?.status)).toEqual(['FAILED']);

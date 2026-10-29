@@ -339,7 +339,7 @@ need them.
                                          │ ├──result FAILED───────▶ FAILED
                                          │ └──deadline passed─────▶ FAILED (TIMED_OUT, by the sweeper)
                                          └──publish failed────────▶ FAILED (UNAVAILABLE)
-FAILED ──POST (player)──▶ QUEUED with a new jobId and a new deadline
+FAILED ──POST (player)──▶ QUEUED with a new jobId and a new deadline, unless the code is INVALID_PGN or TOO_LONG
 ```
 
 There is no RUNNING state. Spring cannot observe it without an extra message, and the UI does not need it.
@@ -387,8 +387,10 @@ CREATE INDEX idx_game_analyses_queued_deadline ON game_analyses (deadline) WHERE
 
 Errors use the existing `ProblemDetail` format.
 
-`AnalysisResponse` is `{ matchId, status, errorCode, deadline, completedAt, engine, initialEval, moves,
-summary }`. The same DTO is pushed over the WebSocket.
+`AnalysisResponse` is `{ matchId, status, errorCode, retryable, deadline, completedAt, engine, initialEval, moves,
+summary }`. The same DTO is pushed over the WebSocket. `retryable` is true for a FAILED analysis that a new POST would
+requeue; a POST for one that failed with `INVALID_PGN` or `TOO_LONG` returns it unchanged with 200, since a retry would
+fail the same way.
 
 ### 5.4 Request flow (`AnalysisService.request`)
 
@@ -755,7 +757,9 @@ Deviations from the draft above, and the checks phase 1 settled:
 - **`requestedAt` is not in `AnalysisResponse`.** Nothing needs it; `deadline` is enough.
 - **Analyze button for everyone.** Whether the viewer is a player is not available to the page without a new
   endpoint, so the server's 403 is shown instead.
-- **`GameAnalysis` is a read-only entity.** Every change is a conditional native statement in `GameAnalysisRepo`.
+- **`GameAnalysis` is a read-only entity.** Every change is a conditional native statement in `GameAnalysisRepo`,
+  called only by `AnalysisJobs`, which owns the transitions and returns the changed analysis, or nothing when another
+  instance got there first.
   The jsonb `result` is a `String` with `@JdbcTypeCode(SqlTypes.JSON)`; it round-trips, so the `AttributeConverter` fallback was not needed.
 - **Converter.** `JacksonJsonMessageConverter(jsonMapper)` with `TypePrecedence.INFERRED`; the
   contract test reads every fixture through that bean, as the listener does.

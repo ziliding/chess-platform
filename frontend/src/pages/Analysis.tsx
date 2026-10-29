@@ -120,7 +120,7 @@ const Analysis = () => {
   const errors = useMemo(() => mistakes(moves), [moves]);
   const current = ply > 0 ? moves[ply - 1] : undefined;
   const view = viewOf(analysis);
-  const failure = view === 'failed' && analysis ? failureNotice(analysis.errorCode) : null;
+  const failure = view === 'failed' && analysis ? failureNotice(analysis) : null;
   const evalNow = ply === 0 ? analysis?.initialEval : current?.eval;
   const sans = game?.sans ?? moves.map((move) => move.san);
 
