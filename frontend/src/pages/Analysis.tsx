@@ -12,6 +12,7 @@ import {
   mistakes,
   moveLabel,
   requestRefusal,
+  summaryNote,
   viewOf,
   watchAnalysis,
 } from '../services/analysisState';
@@ -180,6 +181,7 @@ const Analysis = () => {
               <span className={CLASSIFICATION_COLOR[current.classification]}>{moveLabel(current)}</span>
               {' — best was '}
               <span className="font-semibold">{current.bestSan}</span>
+              {current.explanation && <span className="block mt-1 text-gray-600">{current.explanation}</span>}
             </p>
           )}
         </div>
@@ -224,6 +226,9 @@ const Analysis = () => {
                 <div className="card">
                   <h2 className="text-lg font-semibold text-gray-900 mb-2">Summary</h2>
                   <p className="text-gray-700">{analysis.summary.text}</p>
+                  {summaryNote(analysis.summary) && (
+                    <p className="mt-2 text-xs text-gray-500">{summaryNote(analysis.summary)}</p>
+                  )}
                   {analysis.engine && (
                     <p className="mt-2 text-xs text-gray-500">
                       {analysis.engine.name}, depth {analysis.engine.depth}
@@ -247,6 +252,8 @@ const Analysis = () => {
                           <span className="text-gray-600"> best was {move.bestSan}</span>
                           <span className="text-gray-400"> · {evalText(move.eval)}</span>
                         </button>
+                        {/* Plain text: React escapes it, and nothing renders markdown or HTML */}
+                        {move.explanation && <p className="text-gray-600 mt-0.5">{move.explanation}</p>}
                       </li>
                     ))}
                   </ul>
