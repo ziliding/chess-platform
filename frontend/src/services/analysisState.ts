@@ -36,20 +36,19 @@ export interface Notice {
   retryable: boolean;
 }
 
-// What a FAILED analysis says, by the error code the server stored
-export function failureNotice(errorCode: string | null): Notice {
+// What a FAILED analysis says. The server decides whether a new request can help.
+export function failureNotice(analysis: Pick<Analysis, 'errorCode' | 'retryable'>): Notice {
+  const { errorCode, retryable } = analysis;
+  if (!retryable) return { text: "This game can't be analyzed.", retryable };
   switch (errorCode) {
     case 'TIMED_OUT':
-      return { text: 'Analysis took too long.', retryable: true };
+      return { text: 'Analysis took too long.', retryable };
     case 'ENGINE_ERROR':
     case 'BUDGET_EXCEEDED':
-      return { text: 'Analysis failed.', retryable: true };
-    case 'INVALID_PGN':
-    case 'TOO_LONG':
-      return { text: "This game can't be analyzed.", retryable: false };
+      return { text: 'Analysis failed.', retryable };
     default:
       // UNAVAILABLE, UNSUPPORTED_SCHEMA_VERSION and anything newer than this client
-      return { text: 'Analysis is temporarily unavailable. Try again in a few minutes.', retryable: true };
+      return { text: 'Analysis is temporarily unavailable. Try again in a few minutes.', retryable };
   }
 }
 

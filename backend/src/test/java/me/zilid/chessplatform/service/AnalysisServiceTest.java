@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -18,7 +19,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -30,14 +30,13 @@ import me.zilid.chessplatform.model.dto.AnalysisRequestMessage;
 import me.zilid.chessplatform.model.dto.AnalysisResponse;
 import me.zilid.chessplatform.model.dto.AnalysisResultMessage;
 import me.zilid.chessplatform.model.entity.AnalysisStatus;
-import me.zilid.chessplatform.model.entity.GameAnalysis;
-import me.zilid.chessplatform.repository.GameAnalysisRepo;
 import me.zilid.chessplatform.repository.MatchParticipants;
 import me.zilid.chessplatform.repository.MatchRecordRepo;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.amqp.AmqpConnectException;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.core.AmqpAdmin;
@@ -47,10 +46,8 @@ import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.core.QueueInformation;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.data.domain.Pageable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.access.AccessDeniedException;
-import tools.jackson.databind.json.JsonMapper;
 
 class AnalysisServiceTest {
     private static final Instant NOW = Instant.parse("2026-10-26T12:00:00Z");
@@ -66,8 +63,7 @@ class AnalysisServiceTest {
                     1, "e4", "e2e4", new AnalysisPayload.Eval(30, null), "e4", "e2e4", 0.0, "BEST", null)),
             new AnalysisPayload.Summary("White played well.", "TEMPLATE"));
 
-    private final JsonMapper jsonMapper = JsonMapper.builder().build();
-    private final GameAnalysisRepo analysisRepo = mock(GameAnalysisRepo.class);
+    private final AnalysisJobs jobs = mock(AnalysisJobs.class);
     private final MatchRecordRepo matchRecordRepo = mock(MatchRecordRepo.class);
     private final RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
     private final AmqpAdmin amqpAdmin = mock(AmqpAdmin.class);
@@ -77,43 +73,46 @@ class AnalysisServiceTest {
     @BeforeEach
     void setUp() {
         service = new AnalysisService(
-                analysisRepo,
+                jobs,
                 matchRecordRepo,
                 rabbitTemplate,
                 amqpAdmin,
                 messagingTemplate,
-                jsonMapper,
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 Duration.ofMinutes(3),
                 3);
         when(matchRecordRepo.findParticipantsById(MATCH_ID)).thenReturn(Optional.of(MATCH));
         when(amqpAdmin.getQueueInfo("analysis.requests")).thenReturn(new QueueInformation("analysis.requests", 0, 1));
-        when(analysisRepo.insertQueued(any(), eq(MATCH_ID), any(), eq(WHITE_ID), any()))
-                .thenReturn(1);
-        when(analysisRepo.requeueFailed(eq(MATCH_ID), any(), eq(WHITE_ID), any()))
-                .thenReturn(1);
+        when(jobs.find(MATCH_ID)).thenReturn(Optional.empty());
+        when(jobs.queue(eq(MATCH_ID), any(), eq(WHITE_ID), any())).thenReturn(Optional.of(queued()));
     }
 
-    // Answers instead of when(): a row is built inside other when() calls, where stubbing is not allowed
-    private GameAnalysis row(AnalysisStatus status, @Nullable String result, @Nullable String errorCode) {
-        return mock(
-                GameAnalysis.class, invocation -> switch (invocation.getMethod().getName()) {
-                    case "getMatchId" -> MATCH_ID;
-                    case "getStatus" -> status;
-                    case "getDeadline" -> NOW.plusSeconds(180);
-                    case "getResult" -> result;
-                    case "getErrorCode" -> errorCode;
-                    default -> null;
-                });
+    private static AnalysisResponse analysis(AnalysisStatus status, @Nullable String errorCode, boolean retryable) {
+        boolean done = status == AnalysisStatus.COMPLETED;
+        return new AnalysisResponse(
+                MATCH_ID,
+                status,
+                errorCode,
+                retryable,
+                NOW.plusSeconds(180),
+                done ? NOW : null,
+                done ? PAYLOAD.engine() : null,
+                done ? PAYLOAD.initialEval() : null,
+                done ? PAYLOAD.moves() : null,
+                done ? PAYLOAD.summary() : null);
     }
 
-    private GameAnalysis queuedRow() {
-        return row(AnalysisStatus.QUEUED, null, null);
+    private static AnalysisResponse queued() {
+        return analysis(AnalysisStatus.QUEUED, null, false);
     }
 
-    /** The row that exists once the new job has been inserted, as the final lookup sees it. */
-    private void rowAfterInsert() {
-        when(analysisRepo.findByMatchId(MATCH_ID)).thenReturn(Optional.empty()).thenReturn(Optional.of(queuedRow()));
+    private static AnalysisResponse failed(String errorCode, boolean retryable) {
+        return analysis(AnalysisStatus.FAILED, errorCode, retryable);
+    }
+
+    /** The analysis once the job is queued, as the final lookup sees it. */
+    private void queuedAfterwards() {
+        when(jobs.find(MATCH_ID)).thenReturn(Optional.empty()).thenReturn(Optional.of(queued()));
     }
 
     /** Make the broker answer the publish with {@code answer} (null: never answers). */
@@ -157,7 +156,7 @@ class AnalysisServiceTest {
 
     @Test
     void queuesAJobAndPublishesItAfterTheRowIsStored() {
-        rowAfterInsert();
+        queuedAfterwards();
         brokerConfirms(ack());
 
         AnalysisService.RequestResult result = service.request(MATCH_ID, WHITE_ID);
@@ -166,11 +165,12 @@ class AnalysisServiceTest {
         assertThat(result.analysis().status()).isEqualTo(AnalysisStatus.QUEUED);
         ArgumentCaptor<UUID> jobId = ArgumentCaptor.forClass(UUID.class);
         ArgumentCaptor<Instant> deadline = ArgumentCaptor.forClass(Instant.class);
-        verify(analysisRepo).insertQueued(any(), eq(MATCH_ID), jobId.capture(), eq(WHITE_ID), deadline.capture());
+        InOrder inOrder = inOrder(jobs, rabbitTemplate);
+        inOrder.verify(jobs).queue(eq(MATCH_ID), jobId.capture(), eq(WHITE_ID), deadline.capture());
         assertThat(deadline.getValue()).isEqualTo(NOW.plus(Duration.ofMinutes(3)));
         ArgumentCaptor<Object> sent = ArgumentCaptor.forClass(Object.class);
         ArgumentCaptor<MessagePostProcessor> post = ArgumentCaptor.forClass(MessagePostProcessor.class);
-        verify(rabbitTemplate)
+        inOrder.verify(rabbitTemplate)
                 .convertAndSend(
                         eq("analysis"), eq("request"), sent.capture(), post.capture(), any(CorrelationData.class));
         assertThat(sent.getValue())
@@ -183,41 +183,38 @@ class AnalysisServiceTest {
     }
 
     @Test
-    void aFailedAnalysisIsRetriedUnderANewJob() {
-        GameAnalysis failedRow = row(AnalysisStatus.FAILED, null, "TIMED_OUT");
-        when(analysisRepo.findByMatchId(MATCH_ID))
-                .thenReturn(Optional.of(failedRow))
-                .thenReturn(Optional.of(failedRow))
-                .thenReturn(Optional.of(queuedRow()));
+    void aRetryableFailureIsRetriedUnderANewJob() {
+        when(jobs.find(MATCH_ID))
+                .thenReturn(Optional.of(failed("TIMED_OUT", true)))
+                .thenReturn(Optional.of(queued()));
         brokerConfirms(ack());
 
         AnalysisService.RequestResult result = service.request(MATCH_ID, WHITE_ID);
 
         assertThat(result.created()).isTrue();
-        verify(analysisRepo).requeueFailed(eq(MATCH_ID), any(), eq(WHITE_ID), any());
-        verify(analysisRepo, never()).insertQueued(any(), any(), any(), any(), any());
+        assertThat(result.analysis().status()).isEqualTo(AnalysisStatus.QUEUED);
+        verify(jobs).queue(eq(MATCH_ID), any(), eq(WHITE_ID), any());
     }
 
     @Test
-    void anAnalysisThatIsQueuedOrDoneIsReturnedWithoutANewJob() {
-        for (AnalysisStatus status : List.of(AnalysisStatus.QUEUED, AnalysisStatus.COMPLETED)) {
-            String result = status == AnalysisStatus.COMPLETED ? jsonMapper.writeValueAsString(PAYLOAD) : null;
-            when(analysisRepo.findByMatchId(MATCH_ID)).thenReturn(Optional.of(row(status, result, null)));
+    void anAnalysisThatIsQueuedDoneOrFailedForGoodIsReturnedWithoutANewJob() {
+        for (AnalysisResponse existing :
+                List.of(queued(), analysis(AnalysisStatus.COMPLETED, null, false), failed("INVALID_PGN", false))) {
+            when(jobs.find(MATCH_ID)).thenReturn(Optional.of(existing));
 
             AnalysisService.RequestResult requested = service.request(MATCH_ID, BLACK_ID);
 
             assertThat(requested.created()).isFalse();
-            assertThat(requested.analysis().status()).isEqualTo(status);
+            assertThat(requested.analysis()).isEqualTo(existing);
         }
         verifyNoInteractions(rabbitTemplate);
-        verify(analysisRepo, never()).insertQueued(any(), any(), any(), any(), any());
+        verify(jobs, never()).queue(any(), any(), any(), any());
     }
 
     @Test
     void aDoubleClickGetsItsJobBackEvenAtTheLimit() {
-        when(analysisRepo.findByMatchId(MATCH_ID)).thenReturn(Optional.of(queuedRow()));
-        when(analysisRepo.countByRequestedByAndStatus(WHITE_ID, AnalysisStatus.QUEUED))
-                .thenReturn(3L);
+        when(jobs.find(MATCH_ID)).thenReturn(Optional.of(queued()));
+        when(jobs.countQueued(WHITE_ID)).thenReturn(3L);
 
         assertThat(service.request(MATCH_ID, WHITE_ID).created()).isFalse();
     }
@@ -239,29 +236,25 @@ class AnalysisServiceTest {
 
     @Test
     void aUserCannotHaveMoreThanTheLimitQueued() {
-        when(analysisRepo.findByMatchId(MATCH_ID)).thenReturn(Optional.empty());
-        when(analysisRepo.countByRequestedByAndStatus(WHITE_ID, AnalysisStatus.QUEUED))
-                .thenReturn(3L);
+        when(jobs.countQueued(WHITE_ID)).thenReturn(3L);
 
         assertThatThrownBy(() -> service.request(MATCH_ID, WHITE_ID)).isInstanceOf(TooManyAnalysesException.class);
-        verify(analysisRepo, never()).insertQueued(any(), any(), any(), any(), any());
+        verify(jobs, never()).queue(any(), any(), any(), any());
     }
 
     @Test
     void withoutConsumersNothingIsStored() {
-        when(analysisRepo.findByMatchId(MATCH_ID)).thenReturn(Optional.empty());
         when(amqpAdmin.getQueueInfo("analysis.requests")).thenReturn(new QueueInformation("analysis.requests", 0, 0));
 
         assertThatThrownBy(() -> service.request(MATCH_ID, WHITE_ID))
                 .isInstanceOfSatisfying(
                         AnalysisUnavailableException.class,
                         e -> assertThat(e.getCode()).isEqualTo("ANALYSIS_UNAVAILABLE"));
-        verify(analysisRepo, never()).insertQueued(any(), any(), any(), any(), any());
+        verify(jobs, never()).queue(any(), any(), any(), any());
     }
 
     @Test
     void aMissingQueueOrBrokerMeansUnavailable() {
-        when(analysisRepo.findByMatchId(MATCH_ID)).thenReturn(Optional.empty());
         when(amqpAdmin.getQueueInfo("analysis.requests")).thenReturn(null);
         assertThatThrownBy(() -> service.request(MATCH_ID, WHITE_ID)).isInstanceOf(AnalysisUnavailableException.class);
 
@@ -269,14 +262,13 @@ class AnalysisServiceTest {
                 .when(amqpAdmin)
                 .getQueueInfo("analysis.requests");
         assertThatThrownBy(() -> service.request(MATCH_ID, WHITE_ID)).isInstanceOf(AnalysisUnavailableException.class);
-        verify(analysisRepo, never()).insertQueued(any(), any(), any(), any(), any());
+        verify(jobs, never()).queue(any(), any(), any(), any());
     }
 
     @Test
     void whenAnotherRequestWonTheRaceItsJobIsReturned() {
-        when(analysisRepo.findByMatchId(MATCH_ID)).thenReturn(Optional.empty()).thenReturn(Optional.of(queuedRow()));
-        when(analysisRepo.insertQueued(any(), eq(MATCH_ID), any(), eq(WHITE_ID), any()))
-                .thenReturn(0);
+        queuedAfterwards();
+        when(jobs.queue(eq(MATCH_ID), any(), eq(WHITE_ID), any())).thenReturn(Optional.empty());
 
         assertThat(service.request(MATCH_ID, WHITE_ID).created()).isFalse();
         verifyNoInteractions(rabbitTemplate);
@@ -284,21 +276,19 @@ class AnalysisServiceTest {
 
     @Test
     void aNackedPublishFailsTheJobAndReportsABusyQueue() {
-        when(analysisRepo.findByMatchId(MATCH_ID)).thenReturn(Optional.empty());
-        when(analysisRepo.fail(any(), eq("UNAVAILABLE"))).thenReturn(1);
+        when(jobs.fail(any(), eq("UNAVAILABLE"))).thenReturn(Optional.of(failed("UNAVAILABLE", true)));
         brokerConfirms(correlation -> correlation.getFuture().complete(new CorrelationData.Confirm(false, "full")));
 
         assertThatThrownBy(() -> service.request(MATCH_ID, WHITE_ID))
                 .isInstanceOfSatisfying(
                         AnalysisUnavailableException.class,
                         e -> assertThat(e.getCode()).isEqualTo("ANALYSIS_BUSY"));
-        verify(analysisRepo).fail(any(), eq("UNAVAILABLE"));
+        verify(jobs).fail(any(), eq("UNAVAILABLE"));
     }
 
     @Test
     void anUnroutableMessageFailsTheJob() {
-        when(analysisRepo.findByMatchId(MATCH_ID)).thenReturn(Optional.empty());
-        when(analysisRepo.fail(any(), eq("UNAVAILABLE"))).thenReturn(1);
+        when(jobs.fail(any(), eq("UNAVAILABLE"))).thenReturn(Optional.of(failed("UNAVAILABLE", true)));
         brokerConfirms(correlation -> {
             correlation.setReturned(new org.springframework.amqp.core.ReturnedMessage(
                     new Message(new byte[0]), 312, "NO_ROUTE", "analysis", "request"));
@@ -313,8 +303,7 @@ class AnalysisServiceTest {
 
     @Test
     void aBrokerThatNeverConfirmsFailsTheJob() {
-        when(analysisRepo.findByMatchId(MATCH_ID)).thenReturn(Optional.empty());
-        when(analysisRepo.fail(any(), eq("UNAVAILABLE"))).thenReturn(1);
+        when(jobs.fail(any(), eq("UNAVAILABLE"))).thenReturn(Optional.of(failed("UNAVAILABLE", true)));
         brokerConfirms(correlation -> correlation.getFuture().completeExceptionally(new RuntimeException("lost")));
 
         assertThatThrownBy(() -> service.request(MATCH_ID, WHITE_ID)).isInstanceOf(AnalysisUnavailableException.class);
@@ -322,8 +311,7 @@ class AnalysisServiceTest {
 
     @Test
     void aBrokerOutageAtPublishFailsTheJob() {
-        when(analysisRepo.findByMatchId(MATCH_ID)).thenReturn(Optional.empty());
-        when(analysisRepo.fail(any(), eq("UNAVAILABLE"))).thenReturn(1);
+        when(jobs.fail(any(), eq("UNAVAILABLE"))).thenReturn(Optional.of(failed("UNAVAILABLE", true)));
         doThrow(new AmqpConnectException(new RuntimeException("connection refused")))
                 .when(rabbitTemplate)
                 .convertAndSend(
@@ -337,74 +325,62 @@ class AnalysisServiceTest {
                 .isInstanceOfSatisfying(
                         AnalysisUnavailableException.class,
                         e -> assertThat(e.getCode()).isEqualTo("ANALYSIS_UNAVAILABLE"));
-        verify(analysisRepo).fail(any(), eq("UNAVAILABLE"));
+        verify(jobs).fail(any(), eq("UNAVAILABLE"));
     }
 
     @Test
     void aPublishFailureAfterTheResultArrivedIsNotAnError() {
-        rowAfterInsert();
-        when(analysisRepo.fail(any(), eq("UNAVAILABLE"))).thenReturn(0);
+        queuedAfterwards();
+        when(jobs.fail(any(), eq("UNAVAILABLE"))).thenReturn(Optional.empty());
         brokerConfirms(correlation -> correlation.getFuture().completeExceptionally(new RuntimeException("slow")));
 
         assertThat(service.request(MATCH_ID, WHITE_ID).created()).isTrue();
     }
 
     @Test
-    void getReturnsTheStoredAnalysis() throws Exception {
-        when(analysisRepo.findByMatchId(MATCH_ID))
-                .thenReturn(Optional.of(row(AnalysisStatus.COMPLETED, jsonMapper.writeValueAsString(PAYLOAD), null)));
+    void getReturnsTheStoredAnalysis() {
+        AnalysisResponse done = analysis(AnalysisStatus.COMPLETED, null, false);
+        when(jobs.find(MATCH_ID)).thenReturn(Optional.of(done));
 
-        AnalysisResponse response = service.get(MATCH_ID);
-
-        assertThat(response.status()).isEqualTo(AnalysisStatus.COMPLETED);
-        assertThat(response.moves()).isEqualTo(PAYLOAD.moves());
-        assertThat(Objects.requireNonNull(response.summary()).text()).isEqualTo("White played well.");
+        assertThat(service.get(MATCH_ID)).isEqualTo(done);
     }
 
     @Test
     void getOfAnUnanalyzedMatchIsNotFound() {
-        when(analysisRepo.findByMatchId(MATCH_ID)).thenReturn(Optional.empty());
-
         assertThatThrownBy(() -> service.get(MATCH_ID)).isInstanceOf(GameNotFoundException.class);
     }
 
     @Test
     void aCompletedResultIsStoredAndPushedToBothPlayers() {
         UUID jobId = UUID.randomUUID();
-        when(analysisRepo.complete(eq(jobId), anyString())).thenReturn(1);
-        when(analysisRepo.findByJobId(jobId))
-                .thenReturn(Optional.of(row(AnalysisStatus.COMPLETED, jsonMapper.writeValueAsString(PAYLOAD), null)));
+        AnalysisResponse done = analysis(AnalysisStatus.COMPLETED, null, false);
+        when(jobs.complete(jobId, PAYLOAD)).thenReturn(Optional.of(done));
 
         service.applyResult(completed(jobId));
 
-        ArgumentCaptor<String> stored = ArgumentCaptor.forClass(String.class);
-        verify(analysisRepo).complete(eq(jobId), stored.capture());
-        assertThat(jsonMapper.readValue(stored.getValue(), AnalysisPayload.class))
-                .isEqualTo(PAYLOAD);
-        verify(messagingTemplate).convertAndSendToUser(eq("alice"), eq("/topic/analysis"), any(AnalysisResponse.class));
-        verify(messagingTemplate).convertAndSendToUser(eq("bob"), eq("/topic/analysis"), any(AnalysisResponse.class));
+        verify(jobs).complete(jobId, PAYLOAD);
+        verify(messagingTemplate).convertAndSendToUser("alice", "/topic/analysis", done);
+        verify(messagingTemplate).convertAndSendToUser("bob", "/topic/analysis", done);
     }
 
     @Test
     void aFailedResultStoresItsErrorCode() {
         UUID jobId = UUID.randomUUID();
-        when(analysisRepo.fail(jobId, "INVALID_PGN")).thenReturn(1);
-        when(analysisRepo.findByJobId(jobId)).thenReturn(Optional.of(row(AnalysisStatus.FAILED, null, "INVALID_PGN")));
+        when(jobs.fail(jobId, "INVALID_PGN")).thenReturn(Optional.of(failed("INVALID_PGN", false)));
 
         service.applyResult(failed(jobId, "INVALID_PGN"));
 
-        verify(analysisRepo).fail(jobId, "INVALID_PGN");
+        verify(jobs).fail(jobId, "INVALID_PGN");
         verify(messagingTemplate).convertAndSendToUser(eq("alice"), eq("/topic/analysis"), any(AnalysisResponse.class));
     }
 
     @Test
-    void aDuplicateOrStaleResultChangesAndPushesNothing() {
+    void aDuplicateOrStaleResultPushesNothing() {
         UUID jobId = UUID.randomUUID();
-        when(analysisRepo.complete(eq(jobId), anyString())).thenReturn(0);
+        when(jobs.complete(jobId, PAYLOAD)).thenReturn(Optional.empty());
 
         service.applyResult(completed(jobId));
 
-        verify(analysisRepo, never()).findByJobId(any());
         verifyNoInteractions(messagingTemplate);
     }
 
@@ -436,29 +412,22 @@ class AnalysisServiceTest {
     @Test
     void aFailingPushDoesNotLoseTheStoredResult() {
         UUID jobId = UUID.randomUUID();
-        when(analysisRepo.fail(jobId, "ENGINE_ERROR")).thenReturn(1);
-        when(analysisRepo.findByJobId(jobId)).thenReturn(Optional.of(row(AnalysisStatus.FAILED, null, "ENGINE_ERROR")));
+        when(jobs.fail(jobId, "ENGINE_ERROR")).thenReturn(Optional.of(failed("ENGINE_ERROR", true)));
         doThrow(new IllegalStateException("broker down"))
                 .when(messagingTemplate)
                 .convertAndSendToUser(anyString(), anyString(), any(Object.class));
 
         service.applyResult(failed(jobId, "ENGINE_ERROR"));
 
-        verify(analysisRepo).fail(jobId, "ENGINE_ERROR");
+        verify(jobs).fail(jobId, "ENGINE_ERROR");
     }
 
     @Test
-    void theSweeperFailsExpiredJobsAndPushesOnlyTheOnesItFailed() {
-        UUID mine = UUID.randomUUID();
-        UUID someoneElses = UUID.randomUUID();
-        when(analysisRepo.findExpiredJobIds(eq(NOW), any(Pageable.class))).thenReturn(List.of(mine, someoneElses));
-        when(analysisRepo.fail(mine, "TIMED_OUT")).thenReturn(1);
-        when(analysisRepo.fail(someoneElses, "TIMED_OUT")).thenReturn(0);
-        when(analysisRepo.findByJobId(mine)).thenReturn(Optional.of(row(AnalysisStatus.FAILED, null, "TIMED_OUT")));
+    void theSweeperPushesTheJobsItFailed() {
+        when(jobs.failExpired(NOW, 100)).thenReturn(List.of(failed("TIMED_OUT", true)));
 
         service.failExpired();
 
-        verify(analysisRepo, never()).findByJobId(someoneElses);
         verify(messagingTemplate).convertAndSendToUser(eq("bob"), eq("/topic/analysis"), any(AnalysisResponse.class));
     }
 }

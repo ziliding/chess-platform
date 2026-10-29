@@ -5,7 +5,7 @@ import com.fasterxml.uuid.impl.TimeBasedEpochGenerator;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -18,12 +18,8 @@ import me.zilid.chessplatform.model.dto.AnalysisPayload;
 import me.zilid.chessplatform.model.dto.AnalysisRequestMessage;
 import me.zilid.chessplatform.model.dto.AnalysisResponse;
 import me.zilid.chessplatform.model.dto.AnalysisResultMessage;
-import me.zilid.chessplatform.model.entity.AnalysisStatus;
-import me.zilid.chessplatform.model.entity.GameAnalysis;
-import me.zilid.chessplatform.repository.GameAnalysisRepo;
 import me.zilid.chessplatform.repository.MatchParticipants;
 import me.zilid.chessplatform.repository.MatchRecordRepo;
-import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.AmqpException;
@@ -33,12 +29,9 @@ import org.springframework.amqp.core.QueueInformation;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Requests analyses of archived matches and applies their results. Not transactional on purpose: the job row must be
@@ -51,11 +44,6 @@ public class AnalysisService {
     private static final Duration CONFIRM_TIMEOUT = Duration.ofSeconds(5);
     private static final int SWEEP_BATCH_SIZE = 100;
 
-    /** Error codes that come from Spring itself; the analysis service sends the others. */
-    public static final String TIMED_OUT = "TIMED_OUT";
-
-    public static final String UNAVAILABLE = "UNAVAILABLE";
-
     /**
      * The analysis for a request, and whether the request started it.
      *
@@ -63,45 +51,43 @@ public class AnalysisService {
      */
     public record RequestResult(AnalysisResponse analysis, boolean created) {}
 
-    private final GameAnalysisRepo analysisRepo;
+    private final AnalysisJobs jobs;
     private final MatchRecordRepo matchRecordRepo;
     private final RabbitTemplate rabbitTemplate;
     private final AmqpAdmin amqpAdmin;
     private final SimpMessagingTemplate messagingTemplate;
-    private final JsonMapper jsonMapper;
     private final Clock clock;
     private final Duration deadline;
     private final int maxQueuedPerUser;
 
     public AnalysisService(
-            GameAnalysisRepo analysisRepo,
+            AnalysisJobs jobs,
             MatchRecordRepo matchRecordRepo,
             RabbitTemplate rabbitTemplate,
             AmqpAdmin amqpAdmin,
             SimpMessagingTemplate messagingTemplate,
-            JsonMapper jsonMapper,
             Clock clock,
             @Value("${app.analysis.deadline}") Duration deadline,
             @Value("${app.analysis.max-queued-per-user}") int maxQueuedPerUser) {
-        this.analysisRepo = analysisRepo;
+        this.jobs = jobs;
         this.matchRecordRepo = matchRecordRepo;
         this.rabbitTemplate = rabbitTemplate;
         this.amqpAdmin = amqpAdmin;
         this.messagingTemplate = messagingTemplate;
-        this.jsonMapper = jsonMapper;
         this.clock = clock;
         this.deadline = deadline;
         this.maxQueuedPerUser = maxQueuedPerUser;
     }
 
     public AnalysisResponse get(UUID matchId) {
-        GameAnalysis analysis = analysisRepo
-                .findByMatchId(matchId)
+        return jobs.find(matchId)
                 .orElseThrow(() -> new GameNotFoundException("Game " + matchId + " has not been analyzed"));
-        return toResponse(analysis);
     }
 
-    /** Queue an analysis of the match for one of its players, unless one is already queued or done. */
+    /**
+     * Queue an analysis of the match for one of its players, unless one is already queued or done, or failed in a way
+     * that a retry would repeat.
+     */
     public RequestResult request(UUID matchId, UUID userId) {
         MatchParticipants match = matchRecordRepo
                 .findParticipantsById(matchId)
@@ -109,13 +95,13 @@ public class AnalysisService {
         if (!match.isPlayer(userId)) {
             throw new AccessDeniedException("Only a player of the game can request its analysis");
         }
-        GameAnalysis existing = analysisRepo.findByMatchId(matchId).orElse(null);
+        AnalysisResponse existing = jobs.find(matchId).orElse(null);
         // Before the limit below, so a double click gets its job back instead of an error
-        if (existing != null && existing.getStatus() != AnalysisStatus.FAILED) {
-            return new RequestResult(toResponse(existing), false);
+        if (existing != null && !existing.retryable()) {
+            return new RequestResult(existing, false);
         }
         // A soft limit: concurrent requests can exceed it by one
-        if (analysisRepo.countByRequestedByAndStatus(userId, AnalysisStatus.QUEUED) >= maxQueuedPerUser) {
+        if (jobs.countQueued(userId) >= maxQueuedPerUser) {
             throw new TooManyAnalysesException(
                     "You already have " + maxQueuedPerUser + " analyses running. Wait for one to finish.");
         }
@@ -126,10 +112,7 @@ public class AnalysisService {
 
         UUID jobId = uuidGenerator.generate();
         Instant jobDeadline = clock.instant().plus(deadline);
-        int queued = existing == null
-                ? analysisRepo.insertQueued(uuidGenerator.generate(), matchId, jobId, userId, jobDeadline)
-                : analysisRepo.requeueFailed(matchId, jobId, userId, jobDeadline);
-        if (queued == 0) {
+        if (jobs.queue(matchId, jobId, userId, jobDeadline).isEmpty()) {
             // Another request won the race; its job is the one to report
             return new RequestResult(get(matchId), false);
         }
@@ -141,27 +124,24 @@ public class AnalysisService {
 
     /** Apply a result from the analysis service, once; duplicates and results of replaced jobs are ignored. */
     public void applyResult(AnalysisResultMessage result) {
-        int changed = switch (result.status()) {
-            case "COMPLETED" -> analysisRepo.complete(result.jobId(), payloadJson(result));
-            case "FAILED" -> analysisRepo.fail(result.jobId(), errorCode(result));
+        Optional<AnalysisResponse> changed = switch (result.status()) {
+            case "COMPLETED" -> jobs.complete(result.jobId(), payload(result));
+            case "FAILED" -> jobs.fail(result.jobId(), errorCode(result));
             default -> throw new AmqpRejectAndDontRequeueException("Unknown status: " + result.status());
         };
-        if (changed == 0) {
-            logger.info("Ignoring result of analysis job {}: it is no longer queued", result.jobId());
-            return;
-        }
-        logger.info("Analysis job {} {}", result.jobId(), result.status());
-        analysisRepo.findByJobId(result.jobId()).ifPresent(this::push);
+        changed.ifPresentOrElse(
+                analysis -> {
+                    logger.info("Analysis job {} {}", result.jobId(), result.status());
+                    push(analysis);
+                },
+                () -> logger.info("Ignoring result of analysis job {}: it is no longer queued", result.jobId()));
     }
 
     /** Fail the jobs whose deadline has passed. Safe on every instance at once: each job is failed by one. */
     public void failExpired() {
-        List<UUID> expired = analysisRepo.findExpiredJobIds(clock.instant(), PageRequest.of(0, SWEEP_BATCH_SIZE));
-        for (UUID jobId : expired) {
-            if (analysisRepo.fail(jobId, TIMED_OUT) == 1) {
-                logger.warn("Analysis job {} timed out", jobId);
-                analysisRepo.findByJobId(jobId).ifPresent(this::push);
-            }
+        for (AnalysisResponse expired : jobs.failExpired(clock.instant(), SWEEP_BATCH_SIZE)) {
+            logger.warn("Analysis of match {} timed out", expired.matchId());
+            push(expired);
         }
     }
 
@@ -209,7 +189,7 @@ public class AnalysisService {
 
     private void failPublished(UUID jobId, String failure) {
         // A confirm that timed out does not prove the message was lost: its result may already have arrived
-        if (analysisRepo.fail(jobId, UNAVAILABLE) == 0) {
+        if (jobs.fail(jobId, AnalysisJobs.NOT_PUBLISHED).isEmpty()) {
             logger.info("Analysis job {} was already answered", jobId);
             return;
         }
@@ -220,15 +200,14 @@ public class AnalysisService {
                         : "Analysis is temporarily unavailable");
     }
 
-    private String payloadJson(AnalysisResultMessage result) {
+    private static AnalysisPayload payload(AnalysisResultMessage result) {
         if (result.engine() == null
                 || result.initialEval() == null
                 || result.moves() == null
                 || result.summary() == null) {
             throw new AmqpRejectAndDontRequeueException("COMPLETED result of " + result.jobId() + " has no analysis");
         }
-        return jsonMapper.writeValueAsString(
-                new AnalysisPayload(result.engine(), result.initialEval(), result.moves(), result.summary()));
+        return new AnalysisPayload(result.engine(), result.initialEval(), result.moves(), result.summary());
     }
 
     private static String errorCode(AnalysisResultMessage result) {
@@ -238,36 +217,10 @@ public class AnalysisService {
         return result.error().code();
     }
 
-    private AnalysisResponse toResponse(GameAnalysis analysis) {
-        AnalysisPayload payload = parsePayload(analysis.getResult());
-        return new AnalysisResponse(
-                analysis.getMatchId(),
-                analysis.getStatus(),
-                analysis.getErrorCode(),
-                analysis.getDeadline(),
-                analysis.getCompletedAt(),
-                payload == null ? null : payload.engine(),
-                payload == null ? null : payload.initialEval(),
-                payload == null ? null : payload.moves(),
-                payload == null ? null : payload.summary());
-    }
-
-    private @Nullable AnalysisPayload parsePayload(@Nullable String json) {
-        if (json == null) {
-            return null;
-        }
-        try {
-            return jsonMapper.readValue(json, AnalysisPayload.class);
-        } catch (JacksonException e) {
-            throw new IllegalStateException("Stored analysis cannot be read", e);
-        }
-    }
-
     /** Tell both players. The push is only a notification: the client reloads with GET after a reconnect. */
-    private void push(GameAnalysis analysis) {
+    private void push(AnalysisResponse response) {
         try {
-            AnalysisResponse response = toResponse(analysis);
-            matchRecordRepo.findParticipantsById(analysis.getMatchId()).ifPresent(match -> {
+            matchRecordRepo.findParticipantsById(response.matchId()).ifPresent(match -> {
                 // A player who deleted their account has no name to send to
                 if (match.whiteName() != null) {
                     messagingTemplate.convertAndSendToUser(match.whiteName(), "/topic/analysis", response);
@@ -277,7 +230,7 @@ public class AnalysisService {
                 }
             });
         } catch (RuntimeException e) {
-            logger.warn("Could not push analysis of match {}", analysis.getMatchId(), e);
+            logger.warn("Could not push analysis of match {}", response.matchId(), e);
         }
     }
 }

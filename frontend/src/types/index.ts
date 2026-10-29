@@ -175,6 +175,8 @@ export interface Analysis {
   matchId: string;
   status: AnalysisStatus;
   errorCode: string | null;
+  // Whether a FAILED analysis may succeed if requested again
+  retryable: boolean;
   // When a QUEUED analysis is given up on
   deadline: string;
   completedAt: string | null;
