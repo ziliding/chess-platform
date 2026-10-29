@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.Instant;
 import java.util.UUID;
 import me.zilid.chessplatform.model.entity.FriendRequest;
+import me.zilid.chessplatform.model.entity.MatchRecord;
 import me.zilid.chessplatform.model.entity.User;
 import me.zilid.chessplatform.util.RepositoryTest;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,9 @@ class UserRepoIT {
 
     @Autowired
     private FriendRequestRepo friendRequestRepo;
+
+    @Autowired
+    private MatchRecordRepo matchRecordRepo;
 
     @Autowired
     private TestEntityManager entityManager;
@@ -117,19 +121,29 @@ class UserRepoIT {
         assertThat(userRepo.existsById(bob.getId())).isTrue();
     }
 
-    // Pins current behavior: match_records has no ON DELETE rule, so UserService.deleteUser fails for anyone who has
-    // played a game. Update this test along with whichever fix is chosen.
     @Test
-    void deletingUserWithMatchHistoryIsBlockedByTheMatchForeignKey() {
+    void deletingUserKeepsTheirMatchesForTheOpponent() {
         User alice = user(entityManager, "alice");
         User bob = user(entityManager, "bob");
-        match(entityManager, alice, bob, Instant.parse("2026-01-01T12:00:00Z"));
+        MatchRecord match = match(entityManager, alice, bob, Instant.parse("2026-01-01T12:00:00Z"));
         entityManager.flush();
         entityManager.clear();
 
         userRepo.deleteById(alice.getId());
+        entityManager.flush();
+        entityManager.clear();
 
-        assertThatThrownBy(entityManager::flush).hasMessageContaining("match_records_white_user_id_fkey");
+        Page<MatchRecord> bobsHistory =
+                matchRecordRepo.findByWhitePlayer_IdOrBlackPlayer_Id(bob.getId(), bob.getId(), PageRequest.of(0, 10));
+        assertThat(bobsHistory.getContent()).singleElement().satisfies(kept -> {
+            assertThat(kept.getWhitePlayer()).isNull();
+            assertThat(kept.getBlackPlayer()).extracting(User::getId).isEqualTo(bob.getId());
+        });
+        assertThat(matchRecordRepo.findParticipantsById(match.getId())).hasValueSatisfying(participants -> {
+            assertThat(participants.whiteId()).isNull();
+            assertThat(participants.whiteName()).isNull();
+            assertThat(participants.blackId()).isEqualTo(bob.getId());
+        });
     }
 
     private static User newUser(String username) {

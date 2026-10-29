@@ -268,8 +268,13 @@ public class AnalysisService {
         try {
             AnalysisResponse response = toResponse(analysis);
             matchRecordRepo.findParticipantsById(analysis.getMatchId()).ifPresent(match -> {
-                messagingTemplate.convertAndSendToUser(match.whiteName(), "/topic/analysis", response);
-                messagingTemplate.convertAndSendToUser(match.blackName(), "/topic/analysis", response);
+                // A player who deleted their account has no name to send to
+                if (match.whiteName() != null) {
+                    messagingTemplate.convertAndSendToUser(match.whiteName(), "/topic/analysis", response);
+                }
+                if (match.blackName() != null) {
+                    messagingTemplate.convertAndSendToUser(match.blackName(), "/topic/analysis", response);
+                }
             });
         } catch (RuntimeException e) {
             logger.warn("Could not push analysis of match {}", analysis.getMatchId(), e);

@@ -9,13 +9,14 @@ import org.jspecify.annotations.Nullable;
 @Entity
 @Table(name = "match_records")
 public class MatchRecord extends BaseEntity {
+    // Null once that player deletes their account; the match stays in the opponent's history.
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "white_user_id", updatable = false, nullable = false)
-    private User whitePlayer;
+    @JoinColumn(name = "white_user_id", updatable = false)
+    private @Nullable User whitePlayer;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "black_user_id", updatable = false, nullable = false)
-    private User blackPlayer;
+    @JoinColumn(name = "black_user_id", updatable = false)
+    private @Nullable User blackPlayer;
 
     @Column(name = "result")
     private String matchResult;
@@ -61,19 +62,19 @@ public class MatchRecord extends BaseEntity {
 
     protected MatchRecord() {}
 
-    public User getWhitePlayer() {
+    public @Nullable User getWhitePlayer() {
         return whitePlayer;
     }
 
-    public void setWhitePlayer(User whitePlayer) {
+    public void setWhitePlayer(@Nullable User whitePlayer) {
         this.whitePlayer = whitePlayer;
     }
 
-    public User getBlackPlayer() {
+    public @Nullable User getBlackPlayer() {
         return blackPlayer;
     }
 
-    public void setBlackPlayer(User blackPlayer) {
+    public void setBlackPlayer(@Nullable User blackPlayer) {
         this.blackPlayer = blackPlayer;
     }
 

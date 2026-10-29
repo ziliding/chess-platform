@@ -17,8 +17,9 @@ public interface MatchRecordRepo extends CrudRepository<MatchRecord, UUID> {
     /** What analysis needs of a match, without loading its players as entities. */
     @Query("""
             select new me.zilid.chessplatform.repository.MatchParticipants(
-                m.id, m.whitePlayer.id, m.whitePlayer.username, m.blackPlayer.id, m.blackPlayer.username, m.pgn)
-            from MatchRecord m where m.id = :id
+                m.id, w.id, w.username, b.id, b.username, m.pgn)
+            from MatchRecord m left join m.whitePlayer w left join m.blackPlayer b
+            where m.id = :id
             """)
     Optional<MatchParticipants> findParticipantsById(@Param("id") UUID id);
 }

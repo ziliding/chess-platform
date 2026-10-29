@@ -58,8 +58,8 @@ export interface PlayerRating {
 
 export interface MatchRecord {
   id: string;
-  whitePlayer: User;
-  blackPlayer: User;
+  whitePlayer: User | null; // null once that player deleted their account
+  blackPlayer: User | null;
   startTime: string;
   endTime?: string;
   result: string;
