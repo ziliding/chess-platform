@@ -21,7 +21,6 @@ import random
 import re
 import statistics
 import sys
-import time
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -39,8 +38,8 @@ from analysis.contracts import (
     MoveAnalysis,
 )
 from analysis.engine import fmt_eval, numbered
+from analysis.jobs import JobRunner, Settings
 from analysis.llm import Attempt
-from analysis.worker import Settings, Worker
 
 EVAL_DIR = Path(__file__).parent
 GAMES = EVAL_DIR / "games"
@@ -156,7 +155,7 @@ class Job:
     llm: Attempt | None = None  # None without an LLM, or when the breaker skipped it
 
 
-async def run_all(worker: Worker, games: dict[str, str]) -> list[Job]:
+async def run_all(runner: JobRunner, games: dict[str, str]) -> list[Job]:
     jobs = []
     for name, pgn in games.items():
         request = AnalysisRequest(
@@ -166,13 +165,10 @@ async def run_all(worker: Worker, games: dict[str, str]) -> list[Job]:
             pgn=pgn,
             deadline=datetime.now(UTC) + timedelta(hours=1),
         )
-        start = time.perf_counter()
-        # The worker's job path without the broker: budget, engine retry and error mapping included
-        result = await worker._analyze(request)
-        llm = worker.explainer.last if worker.explainer else None
-        seconds = time.perf_counter() - start - (llm.seconds if llm else 0)
-        jobs.append(Job(name, result, seconds, llm))
-        print(f"{name}: {result.status} in {seconds:.1f}s", file=sys.stderr)
+        # The service's job path without the broker: budget, engine retry and error mapping included
+        run = await runner.run(request)
+        jobs.append(Job(name, run.result, run.engine_seconds, run.llm))
+        print(f"{name}: {run.result.status} in {run.engine_seconds:.1f}s", file=sys.stderr)
     return jobs
 
 
@@ -472,16 +468,12 @@ async def main(llm: bool) -> int:
     # Off unless asked for, even when LLM_* is set in the shell: the engine eval must stay deterministic
     engine_only = replace(with_llm, llm_base_url="", llm_model="")
     # Both runs at once, each on its own engine process, so E2 also covers determinism across processes
-    workers = (Worker(with_llm if llm else engine_only), Worker(engine_only))
-    if llm and workers[0].explainer is None:
+    runners = (JobRunner(with_llm if llm else engine_only), JobRunner(engine_only))
+    if llm and not runners[0].explains:
         print("--llm needs LLM_BASE_URL and LLM_MODEL", file=sys.stderr)
         return 2
-    try:
-        first, second = await asyncio.gather(*(run_all(w, games) for w in workers))
-    finally:
-        for worker in workers:
-            if worker._engine_transport is not None:
-                worker._engine_transport.close()
+    async with runners[0], runners[1]:
+        first, second = await asyncio.gather(*(run_all(r, games) for r in runners))
 
     metrics, compared = evaluate(first, second, games, llm)
     engine = next((j.result.engine.name for j in first if j.result.engine), "unknown engine")
