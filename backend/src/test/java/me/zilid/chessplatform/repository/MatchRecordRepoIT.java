@@ -90,8 +90,8 @@ class MatchRecordRepoIT {
 
         MatchRecord reloaded = entityManager.persistFlushFind(match);
 
-        assertThat(reloaded.getWhitePlayer().getId()).isEqualTo(white.getId());
-        assertThat(reloaded.getBlackPlayer().getId()).isEqualTo(black.getId());
+        assertThat(reloaded.getWhitePlayer()).extracting(User::getId).isEqualTo(white.getId());
+        assertThat(reloaded.getBlackPlayer()).extracting(User::getId).isEqualTo(black.getId());
         assertThat(reloaded.getPgn()).isEqualTo("1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7#");
         assertThat(reloaded.getStartTime()).isEqualTo(Instant.parse("2026-01-01T00:00:00Z"));
         assertThat(reloaded.getEndTime()).isEqualTo(Instant.parse("2026-01-01T00:30:00Z"));

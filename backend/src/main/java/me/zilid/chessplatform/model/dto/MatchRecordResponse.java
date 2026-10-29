@@ -7,8 +7,9 @@ import org.jspecify.annotations.Nullable;
 
 public record MatchRecordResponse(
         UUID id,
-        UserResponse whitePlayer,
-        UserResponse blackPlayer,
+        // null once that player has deleted their account
+        @Nullable UserResponse whitePlayer,
+        @Nullable UserResponse blackPlayer,
         String result,
         String reason,
         Instant startTime,

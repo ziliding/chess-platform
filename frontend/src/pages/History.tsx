@@ -67,9 +67,9 @@ const History = () => {
     if (!user) return 'Unknown';
     
     if (game.whitePlayer?.id === user.id) {
-      return game.blackPlayer?.username || 'Unknown';
+      return game.blackPlayer?.username || 'Deleted user';
     }
-    return game.whitePlayer?.username || 'Unknown';
+    return game.whitePlayer?.username || 'Deleted user';
   };
 
   const getRatingChange = (game: MatchRecord) => {
