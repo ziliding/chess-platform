@@ -117,6 +117,22 @@ flowchart LR
   instance. Unreadable messages go to dead-letter queues you can inspect in the RabbitMQ UI. A request made while
   the service is down is refused right away with "temporarily unavailable", and the rest of the platform is unaffected.
 
+**Eval.** The labels are checked against 25 Lichess games that carry Lichess's own computer analysis, plus 3 games
+exported from this platform. CI reruns it on every push
+([full report](analysis/eval/report.md)). With Stockfish 17.1 at depth 16:
+
+| #   | Metric                                       | Result                                   | Pass                             |
+| --- | -------------------------------------------- | ---------------------------------------- | -------------------------------- |
+| E1  | Games analyzed                               | 28/28                                    | all                              |
+| E2  | Same result on a second run                  | identical                                | identical                        |
+| E3  | Mistakes and blunders found, vs Lichess      | recall 0.84, precision 0.86              | recall ≥ 0.80, precision ≥ 0.80  |
+| E4  | Lichess blunders we also call blunders       | 78%; 2 called good                       | ≥ 75%; at most 2 called good     |
+| E5  | Median eval difference from Lichess          | 15 centipawns                            | ≤ 50                             |
+| E6  | Time per game (p95)                          | 22.8 s on an M-series Mac                | ≤ 60 s on the CI runner          |
+
+E3 and E4 were lowered from recall ≥ 0.85 and at most 1 called good, with sign-off, because depth 16 cannot
+match Lichess's deeper analysis on every move; the reasons are in the spec (§14, "Phase 3 as built").
+
 The design and its trade-offs are in [`docs/specs/ai-analysis.md`](docs/specs/ai-analysis.md).
 
 ---
@@ -231,6 +247,16 @@ uv run pytest   # the checks above and this one run in CI
 The engine tests need Stockfish: `brew install stockfish` (it is found on `PATH`, or set `STOCKFISH_PATH`). The worker
 tests start a RabbitMQ with Testcontainers, so keep Docker running; set `AMQP_TEST_URL` to use a broker you already
 have. pytest enforces 80% coverage.
+
+The engine eval scores the analysis against Lichess's own computer analysis (results under
+[AI game analysis](#ai-game-analysis)). It runs in the service image, so it uses the same Stockfish as production, and
+writes `analysis/eval/report.md`:
+
+```bash
+docker build --tag chess-analysis analysis
+docker run --rm --user "$(id -u):$(id -g)" --volume "$PWD/analysis/eval:/app/eval" --workdir /app \
+  chess-analysis python -m eval.run
+```
 
 The messages between the backend and the analysis service are defined by the golden examples in
 `contracts/analysis/v1/`. The Java tests (`AnalysisContractTest`) and the Python tests (`test_contracts.py`) both check

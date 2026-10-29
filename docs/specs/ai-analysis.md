@@ -1,6 +1,7 @@
 # AI game analysis
 
-**Status:** Phases 1 and 2 are built (see "Phase 1 as built" and "Phase 2 as built" in §14). Phases 3 and 4 are planned and not started. Phase 5 and §16 are a sketch of later work, not a commitment.
+**Status:** Phases 1 and 2 are built (see "Phase 1 as built" and "Phase 2 as built" in §14). Phase 3 is built; two of its
+thresholds were lowered with your sign-off (see "Phase 3 as built"). Phase 4 is planned and not started. Phase 5 and §16 are a sketch of later work, not a commitment.
 **Written:** 2026-10-26
 
 Players can request an analysis of an archived game. They get an evaluation for every move, a list of mistakes with
@@ -17,7 +18,7 @@ runs in a separate, stateless Python service. Spring stays the owner of games, u
 | Transport             | Jobs and results go over RabbitMQ (AMQP). Results reach the browser over the existing STOMP WebSocket.                                                                                      |
 | Chess logic in Python | `python-chess`, with Stockfish over UCI. It does not use the Java rules engine.                                                                                                             |
 | Engine budget         | Depth 16, `Threads=1`, `Hash=64` MB, with a 2 s cap per position. That is about 10–20 s for a 40-move game. Job deadline: 3 min, including queue wait.                                      |
-| LLM                   | Phase 4. The client is any OpenAI-compatible endpoint (`base_url`, `model`, `api_key`). Dev uses a hosted key. CI uses a fake server. With no LLM configured, the template summary is used. |
+| LLM                   | Phase 4. The client is any OpenAI-compatible endpoint (`base_url`, `model`, `api_key`). Dev uses a local model (Ollama or Docker Model Runner, under 10 GB), with OpenRouter as the fallback. CI uses a fake server. With no LLM configured, the template summary is used. |
 | Trigger               | On request only. Nothing runs automatically after a game ends.                                                                                                                              |
 | Who may request       | Only the two players of the match, with at most 3 queued jobs per user.                                                                                                                     |
 | Who may view          | Any authenticated user. This matches `GET /api/games/{id}/pgn` today.                                                                                                                       |
@@ -578,7 +579,8 @@ them.
 - **Configuration:**
   - `LLM_BASE_URL`, `LLM_MODEL` and `LLM_API_KEY` configure the client.
   - If they are unset, the LLM is disabled.
-  - Dev uses a hosted key.
+  - Dev uses a small local model (under 10 GB) through Ollama or Docker Model Runner, which both serve an
+    OpenAI-compatible API. If neither works, OpenRouter, with the key kept in 1Password.
   - CI uses a fake OpenAI-compatible server inside the tests.
 
 ---
@@ -604,7 +606,8 @@ them.
 `ruff format --check`, `pyrefly check` and `pytest --cov-fail-under=80`, with the distribution's `stockfish` package installed by
 apt. The worker tests start their own RabbitMQ with testcontainers, so CI exercises the same path as a developer's
 machine. The engine
-eval joins the job in phase 3. The existing backend tests must keep passing once the AMQP starter is on the classpath.
+eval joins the job in phase 3, as a last step that runs inside the service image. The existing backend tests must keep
+passing once the AMQP starter is on the classpath.
 
 ---
 
@@ -632,8 +635,8 @@ never relaxed silently.
 | --- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | E1  | Completion                                                                                                                            | 28/28 games COMPLETED, 0 worker errors                                                                |
 | E2  | Determinism: the eval runs depth-only (`ENGINE_POSITION_TIMEOUT=0`), because a time cap that fires makes the search non-deterministic | A second run gives byte-identical `moves` for every game                                              |
-| E3  | Detection of serious errors (MISTAKE ∪ BLUNDER) against Lichess, matched by ply                                                       | recall ≥ 0.85 **and** precision ≥ 0.80                                                                |
-| E4  | Blunder agreement                                                                                                                     | ≥ 75% of Lichess BLUNDERs are our BLUNDER; at most 1 Lichess BLUNDER labeled BEST or GOOD by us       |
+| E3  | Detection of serious errors (MISTAKE ∪ BLUNDER) against Lichess, matched by ply                                                       | recall ≥ 0.80 (was 0.85) **and** precision ≥ 0.80                                                     |
+| E4  | Blunder agreement                                                                                                                     | ≥ 75% of Lichess BLUNDERs are our BLUNDER; at most 2 (was 1) labeled BEST or GOOD by us               |
 | E5  | Eval agreement                                                                                                                        | median \|our cp − Lichess cp\| ≤ 50, over positions where both evals are non-mate and \|cp\| ≤ 500    |
 | E6  | Latency                                                                                                                               | p95 job time ≤ 60 s on the CI runner (gate); the actual p95 is also reported, with a target of ≤ 30 s |
 
@@ -793,16 +796,70 @@ Deviations from the draft above, and the checks phase 1 settled:
   phase 2 only aligned the `UNAVAILABLE` copy with the refusal message.
 - **Smoke test.** `LOADTEST_EXPECT_ANALYSIS` is unset by default, so the larger load tests do not flood the worker.
 
+### Phase 3 as built
+
+- **Download OK.** The user's request on 2026-10-27 to start phase 3 was taken as the OK to download Lichess games.
+- **Lichess games.** The 25 games come from the first 60 MB of the September 2026 Lichess database (CC0), which held
+  19,065 games with computer analysis. A seeded random pick filled every §12.1 quota: average ratings 839 to 2411; 6
+  bullet, 8 blitz, 7 rapid and 4 classical games; 7 checkmates, 9 resignations, 5 timeouts and 4 draws (2 by
+  repetition, 1 stalemate, 1 agreement); 5 games under 20 moves and 2 over 80; an underpromotion, 2 en passant
+  captures and both castles. The database has evals but no judgments, so the 25 games were then exported with
+  `POST /api/games/export/_ids?evals=true&literate=true`. The single-game export now sends anonymous users to sign up.
+  Each game is committed as it was exported, in `analysis/eval/games/lichess-<id>.pgn`.
+- **Platform games.** Three of the Lichess games were replayed through the Java `Game` by a throwaway test, and its
+  `getNotation()` output was saved as `platform-1.pgn` to `platform-3.pgn`. They cover checkmate with `h8=R`,
+  stalemate after an en passant capture, and checkmate with rank disambiguation (`R1e7+`). They are snapshots.
+  `AnalysisContractTest` still pins the format through `request.platform-pgn.json`.
+- **Reference labels (§15.1).** The export has a `[%eval]` after every move and a glyph on every judgment, `?!`, `?`
+  or `??`. lila's mate judgments ("Checkmate is now unavoidable", "Lost forced checkmate sequence") carry the same
+  glyphs. The eval reads both through python-chess (`node.eval()`, `node.nags`), not from the comment text, and
+  compares only the plies that Lichess evaluated. That leaves out the mating move.
+- **Runner.** `eval/run.py` sends each game through `Worker._analyze`, which is the job path without the broker, so
+  the job budget, the engine retry and the error mapping all apply. It runs depth-only, with both passes at once on
+  separate engine processes. So E2 also covers determinism across processes.
+- **Stockfish (§15.3).** The eval runs inside the service image, both locally and in CI, so it always uses the image's
+  Debian Stockfish 17.1, the engine production runs. Downloading an official binary was not needed. pytest still
+  uses the runner's `stockfish` package; those tests assert properties that hold across versions.
+- **Results** (`analysis/eval/report.md`). E1, E2, E5 and E6 pass. E5 is a median of 15 cp, and E6 a p95 of 22.8 s
+  on an M-series Mac. Two metrics missed their original thresholds:
+  - **E3:** recall is 0.84 (162/194), below 0.85. Precision is 0.86. Of the 32 serious errors we miss, 6 involve
+    a mate. In one, 2Rt3Z9M5 27.Rfd1, the two evals agree and only lila's `MateCreated` rule differs. In the other 5,
+    Lichess's deeper search found a mate that depth 16 did not. Of the other 26, we still flag 21, as an INACCURACY,
+    one grade below Lichess's label. In the remaining 5, which we call GOOD, depth 16
+    missed a tactic. Lichess's eval of the position before or after the move differs from ours by 100 cp or more:
+    AJOqh22R 18.Re2, 18...b5 and 19.Bb3, SZVqf5Ii 16...g6, and nJJIXhCI 26.Nc3.
+  - **E4:** 78% of Lichess's blunders are ours, which passes, but 2 are labeled GOOD against a limit of 1. Both
+    come from one move pair, AJOqh22R 18.Re2 and 18...b5. Lichess saw a tactic there that depth 16 does not.
+  - **Depth 18,** measured as an experiment: precision rises to 0.91 and blunder agreement to 83%. But recall stays
+    at 0.84, 2 blunders are still labeled GOOD, and p95 doubles to 49.6 s. So depth is not the fix.
+  - **Backward analysis,** measured as an experiment at depth 16: positions searched last to first in one engine
+    game, so the hash carries what later searches found back to earlier positions. This is how Lichess's fishnet
+    client orders them (`src/queue.rs`, "Reverse for backwards analysis"). It fixes the cases above: all 5 GOOD
+    misses move up, and AJOqh22R 18...b5 now agrees. But other games move the other way, mostly ahYXRgBp, where
+    34...Qxb2 and 38...Qxf4 become the 2 Lichess blunders labeled GOOD or BEST. Recall falls to 0.80 (156/194),
+    precision rises to 0.90, and blunder agreement to 81%. E2 still passes and p95 is unchanged. So it is not the fix
+    either: at depth 16, a change in search order moves about as many labels away from Lichess as toward it.
+  - **lila's mate rules,** if adopted, would recover only 27.Rfd1 (recall 163/194, still 0.84). Their effect on
+    precision was not measured.
+- **On the CI runner** (first run, on PR #134): the eval step took 5.5 minutes, and the whole `analysis` job 6m19s.
+  E6's p95 is 19.9 s, under both the 60 s gate and the 30 s target. E1 to E5 match the local run, and the `--user`
+  mapping lets the container write the report to the Linux bind mount.
+- **Signed off 2026-10-27** ("Lower the threshold"), per §12: E3 recall from ≥ 0.85 to ≥ 0.80, with precision still
+  ≥ 0.80, and E4 from at most 1 to at most 2 Lichess blunders labeled BEST or GOOD. Neither experiment above closes
+  the gap to Lichess's deeper analysis at depth 16, and the run is deterministic, so the gate's job is to catch a
+  later code or Stockfish change that makes the labels worse. All six metrics now pass, with little margin: E4 sits
+  exactly on its limit of 2, and E3's 162 hits are 6 above the 156 that 0.80 needs, where the backward-analysis
+  experiment landed. A Stockfish upgrade can trip either gate, which then calls for a review.
+
 ## 15. Open checks
 
 Checks the remaining phases start with. The ones phase 1 needed are settled and recorded under "Phase 1 as built".
 
-1. **Lichess export (phase 3).** Check that the game export includes both `[%eval]` and the judgment glyphs, and decide
-   how to compare our mate handling with lila's `MateCreated` and `MateLost` rules (§14, "Phase 1 as built").
+1. ~~**Lichess export (phase 3).**~~ Settled: the export has both, and lila's mate judgments carry the same glyphs, so
+   the eval compares against them as they are (see "Phase 3 as built").
 2. ~~**RabbitMQ 4.1 quorum queues (phase 2).**~~ Settled: disconnects count like nacks (see "Phase 2 as built").
-3. **Stockfish version (phase 3).** The eval report names the engine version, and E2 (determinism) needs the same
-   version for both runs. CI installs the distribution's package, so check the version it gets matches the image's, or
-   pin one binary for both.
+3. ~~**Stockfish version (phase 3).**~~ Settled: the eval runs inside the service image, so it uses the image's
+   Stockfish wherever it runs (see "Phase 3 as built").
 
 ---
 

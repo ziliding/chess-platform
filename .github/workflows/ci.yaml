@@ -126,6 +126,13 @@ jobs:
       - name: Test
         run: uv run pytest --cov=analysis --cov-fail-under=80
 
+      - name: Engine eval
+        # In the service image, so it measures the Stockfish that production runs; fails if any of E1-E6 fails
+        run: |
+          docker build --tag chess-analysis .
+          docker run --rm --user "$(id -u):$(id -g)" --volume "$PWD/eval:/app/eval" --workdir /app \
+            chess-analysis python -m eval.run
+
   # Plays one full game through the gateway, so it catches breakage between services that unit tests miss
   loadtest-smoke:
     name: Load test (smoke)

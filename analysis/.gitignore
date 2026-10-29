@@ -3,3 +3,5 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .coverage
+# Written by every eval run; nothing reads it, and report.md is the committed record
+eval/report.json

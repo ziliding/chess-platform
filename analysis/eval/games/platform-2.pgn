@@ -1,0 +1,10 @@
+[StartTime "2026-10-27T10:00:00Z"]
+[EndTime "2026-10-27T10:02:05Z"]
+[Round "63"]
+[White "alice"]
+[Black "bob"]
+[Result "1/2-1/2"]
+[Termination "Draw by stalemate"]
+
+1. b4 e5 2. Bb2 Nc6 3. b5 Nd4 4. e3 Ne6 5. Bxe5 Qh4 6. Nf3 Qe7 7. c4 Qb4 8. Nc3 d6 9. Rb1 Qc5 10. Bg3 Nf6 11. Be2 g6 12. O-O Bg7 13. d4 Qb6 14. a4 c5 15. bxc6 Qxc6 16. d5 Nxd5 17. Nxd5 O-O 18. Qd2 h5 19. Rfc1 b6 20. Bf4 Nxf4 21. exf4 Bf5 22. Bd3 Bg4 23. Qe3 Rfe8 24. Ne7+ Rxe7 25. Qxe7 Bxf3 26. gxf3 Qxf3 27. Bf1 Qg4+ 28. Bg2 h4 29. h3 Qxf4 30. Qe4 Qg5 31. a5 f5 32. Qxa8+ Kh7 33. Qd5 Be5 34. axb6 axb6 35. Qb7+ Kh6 36. Qxb6 Qf4 37. Qe3 Qxe3 38. fxe3 g5 39. e4 Kg6 40. exf5+ Kxf5 41. Rb6 g4 42. hxg4+ Kxg4 43. Rd1 h3 44. Bxh3+ Kxh3 45. Rdxd6 Bxd6 46. Rxd6 Kg4 47. c5 Kf5 48. c6 Ke5 49. c7 Kxd6 50. c8=Q Kd5 51. Qg4 Kc5 52. Kf2 Kb5 53. Ke3 Kb6 54. Qd4+ Kb5 55. Ke4 Ka5 56. Qc4 Kb6 57. Kd4 Ka5 58. Kd5 Kb6 59. Qc5+ Kb7 60. Qb5+ Kc7 61. Qc6+ Kd8 62. Qd6+ Kc8 63. Kc6
+1/2-1/2

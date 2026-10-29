@@ -31,13 +31,13 @@ packages = ["src/analysis"]
 
 [tool.ruff]
 line-length = 110
-src = ["src", "tests"]
+src = ["src", "tests", "."]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC"]
 
 [tool.pyrefly]
-project-includes = ["src", "tests"]
+project-includes = ["src", "tests", "eval"]
 search-path = ["src", "."]
 
 [tool.pytest.ini_options]
