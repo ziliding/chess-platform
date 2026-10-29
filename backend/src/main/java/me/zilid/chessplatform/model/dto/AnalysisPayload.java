@@ -18,6 +18,8 @@ public record AnalysisPayload(Engine engine, Eval initialEval, List<Move> moves,
      *
      * @param classification BEST, GOOD, INACCURACY, MISTAKE or BLUNDER. A string, not an enum, so a value added by a
      *     newer analysis service does not break reading old messages.
+     * @param explanation the LLM's plain-text explanation of a mistake; null for other moves, when the LLM was not
+     *     used, and in results stored before it existed
      */
     public record Move(
             int ply,
@@ -27,7 +29,8 @@ public record AnalysisPayload(Engine engine, Eval initialEval, List<Move> moves,
             String bestSan,
             String bestUci,
             double winChanceLoss,
-            String classification) {}
+            String classification,
+            @Nullable String explanation) {}
 
     /**
      * A plain-language summary of the game.

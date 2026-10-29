@@ -53,6 +53,8 @@ class MoveAnalysis(Contract):
     best_uci: str
     win_chance_loss: float
     classification: Classification
+    # The LLM's plain-text explanation of a mistake; added in phase 4, so older results lack it
+    explanation: str | None = None
 
 
 class Summary(Contract):

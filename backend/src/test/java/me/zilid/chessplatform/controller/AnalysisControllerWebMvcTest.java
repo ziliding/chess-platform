@@ -65,7 +65,15 @@ class AnalysisControllerWebMvcTest {
                 new AnalysisPayload.Engine("Stockfish 17.1", 16),
                 new AnalysisPayload.Eval(20, null),
                 List.of(new AnalysisPayload.Move(
-                        6, "Nf6", "g8f6", new AnalysisPayload.Eval(null, 1), "g6", "g7g6", 1.06, "BLUNDER")),
+                        6,
+                        "Nf6",
+                        "g8f6",
+                        new AnalysisPayload.Eval(null, 1),
+                        "g6",
+                        "g7g6",
+                        1.06,
+                        "BLUNDER",
+                        "Nf6 leaves f7 undefended.")),
                 new AnalysisPayload.Summary("Black blundered.", "TEMPLATE"));
     }
 
@@ -96,6 +104,7 @@ class AnalysisControllerWebMvcTest {
                 .extractingPath("$.moves[0].classification")
                 .isEqualTo("BLUNDER");
         assertThat(result).bodyJson().extractingPath("$.moves[0].eval.mate").isEqualTo(1);
+        assertThat(result).bodyJson().extractingPath("$.moves[0].explanation").isEqualTo("Nf6 leaves f7 undefended.");
         assertThat(result).bodyJson().extractingPath("$.summary.source").isEqualTo("TEMPLATE");
         assertThat(result).bodyJson().extractingPath("$.errorCode").isNull();
     }

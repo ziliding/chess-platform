@@ -79,7 +79,9 @@ class AnalysisContractTest {
             assertThat(result.moves()).hasSize(7);
             assertThat(result.moves().get(5).classification()).isEqualTo("BLUNDER");
             assertThat(result.moves().get(6).eval().mate()).isZero();
-            assertThat(Objects.requireNonNull(result.summary()).source()).isEqualTo("TEMPLATE");
+            boolean llm = fixture.getFileName().toString().contains(".llm.");
+            assertThat(Objects.requireNonNull(result.summary()).source()).isEqualTo(llm ? "LLM" : "TEMPLATE");
+            assertThat(result.moves().get(5).explanation() != null).isEqualTo(llm);
         } else {
             assertThat(Objects.requireNonNull(result.error()).code()).isEqualTo("INVALID_PGN");
             assertThat(result.moves()).isNull();
