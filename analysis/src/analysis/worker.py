@@ -21,6 +21,7 @@ from pydantic import ValidationError
 
 from analysis.contracts import SCHEMA_VERSION, AnalysisRequest, AnalysisResult, ErrorCode, ErrorInfo
 from analysis.engine import AnalysisError, Analyzed, analyze
+from analysis.llm import Explainer
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +50,10 @@ class Settings:
     job_budget_seconds: float = field(
         default_factory=lambda: float(os.environ.get("JOB_BUDGET_SECONDS", "120"))
     )
+    # Any OpenAI-compatible endpoint; the LLM is off unless both the URL and the model are set
+    llm_base_url: str = field(default_factory=lambda: os.environ.get("LLM_BASE_URL", ""))
+    llm_model: str = field(default_factory=lambda: os.environ.get("LLM_MODEL", ""))
+    llm_api_key: str = field(default_factory=lambda: os.environ.get("LLM_API_KEY", ""))
 
 
 class Worker:
@@ -62,6 +67,11 @@ class Worker:
         self._consumer_tag: str | None = None
         # Held while a job runs, so shutdown can wait for it
         self._job = asyncio.Lock()
+        self.explainer = (
+            Explainer(settings.llm_base_url, settings.llm_model, settings.llm_api_key)
+            if settings.llm_base_url and settings.llm_model
+            else None
+        )
 
     async def _start_engine(self) -> None:
         transport, engine = await chess.engine.popen_uci(self.settings.stockfish_path)
@@ -209,14 +219,24 @@ class Worker:
         except AnalysisError as e:
             log.info("Job %s failed: %s", request.job_id, e.message)
             return self._failed(request, e.code, e.message)
+        summary, moves = analyzed.summary, analyzed.moves
+        # After the engine step, so the job budget and the hang handling stay the engine's alone
+        if self.explainer is not None:
+            seconds_left = (request.deadline - datetime.now(UTC)).total_seconds()
+            explained = await self.explainer.explain(analyzed, seconds_left)
+            if explained is not None:
+                summary = explained.summary
+                moves = [
+                    m.model_copy(update={"explanation": explained.explanations.get(m.ply)}) for m in moves
+                ]
         return AnalysisResult(
             job_id=request.job_id,
             match_id=request.match_id,
             status="COMPLETED",
             engine=analyzed.engine,
             initial_eval=analyzed.initial_eval,
-            moves=analyzed.moves,
-            summary=analyzed.summary,
+            moves=moves,
+            summary=summary,
         )
 
     async def _analyze_with_retry(self, request: AnalysisRequest) -> Analyzed:
