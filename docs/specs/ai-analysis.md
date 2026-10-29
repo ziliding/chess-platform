@@ -1,7 +1,7 @@
 # AI game analysis
 
 **Status:** Phases 1 and 2 are built (see "Phase 1 as built" and "Phase 2 as built" in §14). Phase 3 is built; two of its
-thresholds were lowered with your sign-off (see "Phase 3 as built"). Phase 4 is planned and not started. Phase 5 and §16 are a sketch of later work, not a commitment.
+thresholds were lowered with your sign-off (see "Phase 3 as built"). Phase 4 is built (see "Phase 4 as built"). Phase 5 and §16 are a sketch of later work, not a commitment.
 **Written:** 2026-10-26
 
 Players can request an analysis of an archived game. They get an evaluation for every move, a list of mistakes with
@@ -850,6 +850,81 @@ Deviations from the draft above, and the checks phase 1 settled:
   later code or Stockfish change that makes the labels worse. All six metrics now pass, with little margin: E4 sits
   exactly on its limit of 2, and E3's 162 hits are 6 above the 156 that 0.80 needs, where the backward-analysis
   experiment landed. A Stockfish upgrade can trip either gate, which then calls for a review.
+
+### Phase 4 as built
+
+- **Prompt input.** The prompt lists only the moves classified INACCURACY or worse, each with the fields in §10.
+  `bestLine` is the engine's first 4 moves from the position before the mistake, in numbered SAN. The prompt also
+  carries the template summary (the per-side counts, the turning point and the result) and the plies to explain.
+  Leaving out the good moves keeps the prompt short for a 400-ply game. The engine's lines stay inside the worker
+  (`Analyzed.best_lines`), so the contract does not grow and E2 still compares the same bytes.
+- **Which mistakes get explained.** The 5 with the largest `winChanceLoss`. Blunders lose the most, so every blunder
+  is included unless there are more than 5, in which case the 5 worst are explained.
+- **Moves, not plies, in the prompt.** §10's output keys explanations by `ply`, which is internal to the worker.
+  As built, the model never sees a ply number. `explain` lists the moves as numbered SAN (`"8...c4"`), and the
+  model answers `{"move": "8...c4", "text": ...}`; the worker maps each label back to its ply. The first `--llm` run
+  had a bare `ply` next to `"played": "8...c4"`, and `qwen2.5:7b` wrote "16...c4": it took the ply for the move
+  number in most of its ungrounded citations. L2 was 88% (244/276), and only 63% of games were clean.
+- **Validation.** Besides the schema, the explanations must cover exactly the requested moves, compared without
+  spaces and without trailing `?!`, `+` or `#`. Anything else triggers the repair call. Length is measured by L4,
+  not enforced.
+- **Calls.** The `openai` SDK (v3, which runs on `httpx2`) with `timeout=20`, `max_retries=1`, `temperature=0` and
+  `response_format={"type": "json_object"}`. The 30 s total covers the repair call too, and it is also capped by the
+  job's deadline. The LLM step runs after the engine step, outside the engine's budget and hang handling, so an LLM
+  timeout never restarts Stockfish.
+- **Circuit breaker.** Any failed LLM step counts: an error, a timeout, or output still invalid after the repair.
+  After 3 in a row, the LLM is skipped for 60 s. The count is not reset when the pause ends, so one more failure
+  skips again at once; a success resets it.
+- **Configuration.** The LLM is on when `LLM_BASE_URL` and `LLM_MODEL` are both non-empty. Compose passes empty
+  defaults, so the empty string counts as unset. `LLM_API_KEY` is optional, because Ollama ignores it. Compose adds
+  `host.docker.internal:host-gateway`, so a containerized worker reaches Ollama on a Linux host too. The dev model is
+  `qwen2.5:7b` (4.7 GB) through Ollama.
+- **UI note.** "AI explanation unavailable — showing engine summary." shows whenever `summary.source` is `TEMPLATE`.
+  The contract cannot tell an LLM that failed from one that is not configured, or from a result stored before phase
+  4, so all three show the note. Explanations are shown under the current move and in the mistakes list, as plain
+  React text.
+- **Fixtures.** `result.completed.json` now has `"explanation": null` on every move, because the Python model always
+  writes the field. The new `result.completed.llm.json` has two explanations and `source: "LLM"`. The extra-field
+  fixture stays without `explanation`, so it also proves that a result stored before phase 4 still reads the same.
+  Both sides check the LLM fixture, and `AnalysisAmqpIT` checks that an explanation survives the listener, the jsonb
+  column and the GET.
+- **Eval (`--llm`).** The first run uses the LLM and the second stays engine-only. So E2 compares the moves without
+  `explanation`, L6 scores the second run's template summaries, and E6 subtracts the LLM step's time. Without
+  `--llm`, the engine eval forces the LLM off even when `LLM_*` is set in the shell, so CI's engine gate stays
+  deterministic.
+- **L2 checker.** A bare square such as "f7" is not counted as a pawn move unless it has a move number. Otherwise every
+  "f7 is weak" in an explanation would count as an ungrounded citation. Pawn captures (`exd5`) and piece moves always
+  count. A citation without a move number is grounded if it was played or was best at any ply. A move number cannot be
+  the end of a decimal, and White's must have no space after its dot. The first hosted run showed why: the checker read
+  "swings to -2.6. Bxd5" as 6.Bxd5 and "a mate in 11. Kc5" as 11.Kc5. Those misreadings were 9 of the 10 ungrounded
+  citations it reported. `report.json` now keeps each game's LLM text, so a checker fix can rescore the same output.
+- **Results with a hosted model** (`analysis/eval/report.md`: `anthropic/claude-haiku-5.5` through OpenRouter, run
+  in the service image on 2026-10-28). E1–E6 and L1–L6 all pass, with thresholds unchanged:
+  - **L1:** 100% (28/28) valid on the first call, and no fallbacks.
+  - **L2:** 231 of 232 citations are grounded, and 27 of 28 games are clean. The one miss cites a later move of
+    `bestLine` ("after Kd7").
+  - **L3:** 100% (25/25). **L4:** nothing over length.
+  - **L5:** the LLM step's p95 is 10.9 s, at 3,529 tokens per game, which is well under a cent per game at this
+    model's price.
+  - **L7:** waits for your reading of the report's 5 spot-check games.
+
+  The first hosted run, before the L2 checker fix, scored L2 at 96%. 9 of its 10 ungrounded citations were the
+  checker's misreadings (see "L2 checker"). The rerun is a new sample of the model's output, because the earlier
+  report did not keep the text.
+- **Results with the dev model** (`qwen2.5:7b` through Ollama on an M3 Pro, in the service image, before the L2
+  checker fix). L3, L4 and L6 pass. L1, L2 and L5 miss, so the local model is for trying the feature, not for
+  passing the gate:
+  - **L1:** 93% (26/28) valid on the first call, against ≥ 95%. Both misses were timeouts, not invalid JSON; no
+    first call needed a repair. Both jobs completed on the template.
+  - **L2:** 97% (183/189) of citations are grounded, against ≥ 98%. 77% (20/26) of games have no ungrounded
+    citation, against ≥ 90%. The 6 left are model errors: 2 cite a later move of `bestLine` ("preparing ...Qd5"),
+    and 4 give a move the wrong number or side. They were not chased in the prompt, which would fit it to these
+    games.
+  - **L5:** the LLM step's p95 is 26.2 s, against ≤ 15 s, at 1,502 tokens per game. That is a local 7B model on a
+    laptop that is also running two Stockfish processes, so a hosted model is the real test.
+- **Workflow.** `.github/workflows/llm-eval.yaml` is dispatch-only. Its inputs are `base-url` (default OpenRouter) and
+  `model`, it reads the `LLM_API_KEY` secret, and it uploads the report as an artifact. It has not been run: the
+  secret is not set yet.
 
 ## 15. Open checks
 

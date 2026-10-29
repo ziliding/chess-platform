@@ -116,6 +116,9 @@ flowchart LR
 - **Failure handling.** A job that nobody answers is failed with `TIMED_OUT` after three minutes, by any backend
   instance. Unreadable messages go to dead-letter queues you can inspect in the RabbitMQ UI. A request made while
   the service is down is refused right away with "temporarily unavailable", and the rest of the platform is unaffected.
+- **LLM explanations.** With an OpenAI-compatible LLM configured, it writes the summary and explains the five worst
+  mistakes. It sees only the engine's facts, never the PGN headers or player names. If it is down, slow, or gives
+  invalid output twice, the engine's own summary is shown instead, and the analysis still completes.
 
 **Eval.** The labels are checked against 25 Lichess games that carry Lichess's own computer analysis, plus 3 games
 exported from this platform. CI reruns it on every push
@@ -132,6 +135,18 @@ exported from this platform. CI reruns it on every push
 
 E3 and E4 were lowered from recall ≥ 0.85 and at most 1 called good, with sign-off, because depth 16 cannot
 match Lichess's deeper analysis on every move; the reasons are in the spec (§14, "Phase 3 as built").
+
+The LLM's output is scored on the same games (`--llm`, run by hand because it needs an API key). With
+`anthropic/claude-haiku-5.5` through OpenRouter:
+
+| #   | Metric                                        | Result                       | Pass                        |
+| --- | --------------------------------------------- | ---------------------------- | --------------------------- |
+| L1  | Valid JSON on the first call                  | 28/28, no fallbacks          | ≥ 95%                       |
+| L2  | Cited moves that were played or best there    | 231/232; 27/28 games clean   | ≥ 98%; ≥ 90% of games       |
+| L3  | Summary names the turning point               | 25/25 games with a blunder   | ≥ 80%                       |
+| L4  | Summary ≤ 80 words, explanations ≤ 40         | all                          | all                         |
+| L5  | LLM step time (p95)                           | 10.9 s, 3,529 tokens a game  | ≤ 15 s                      |
+| L6  | Checker passes the template summaries         | 28/28                        | all                         |
 
 The design and its trade-offs are in [`docs/specs/ai-analysis.md`](docs/specs/ai-analysis.md).
 
@@ -200,6 +215,16 @@ uv run uvicorn analysis.main:app --port 8000
 
 Without it, the backend still works: requesting an analysis answers "temporarily unavailable".
 
+For LLM explanations, point the service at any OpenAI-compatible endpoint, such as a small model served by
+[Ollama](https://ollama.com) (`ollama pull qwen2.5:7b`):
+
+```bash
+LLM_BASE_URL=http://localhost:11434/v1 LLM_MODEL=qwen2.5:7b uv run uvicorn analysis.main:app --port 8000
+```
+
+`LLM_API_KEY` is needed only by hosted providers. With no LLM set, the summary is the engine's own. Under Compose,
+set the same variables in `.env`; there, Ollama on the host is `http://host.docker.internal:11434/v1`.
+
 The credentials in `compose.yaml` and `application-dev.yaml` are for local development only.
 
 ### Configuration
@@ -257,6 +282,11 @@ docker build --tag chess-analysis analysis
 docker run --rm --user "$(id -u):$(id -g)" --volume "$PWD/analysis/eval:/app/eval" --workdir /app \
   chess-analysis python -m eval.run
 ```
+
+With `--llm`, the eval also scores the LLM's output (L1–L6 in the spec, §12.3): valid JSON, moves cited that were
+really played or best, the turning point, length, and latency. It adds five games to the report for a human to read
+(L7). It needs `LLM_BASE_URL`, `LLM_MODEL` and, for a hosted model, `LLM_API_KEY`, passed with `--env`. The
+**LLM eval** workflow runs it by hand on GitHub with the key as a secret; CI's tests use a fake LLM server instead.
 
 The messages between the backend and the analysis service are defined by the golden examples in
 `contracts/analysis/v1/`. The Java tests (`AnalysisContractTest`) and the Python tests (`test_contracts.py`) both check
