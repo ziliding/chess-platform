@@ -138,6 +138,11 @@ export interface GameCreatedResponse {
   socketUrl: string;
 }
 
+export interface SeekResponse {
+  status: 'SEARCHING' | 'MATCHED';
+  gameId: string | null;
+}
+
 export interface GameJoinResponse {
   gameId: string;
   role: string;

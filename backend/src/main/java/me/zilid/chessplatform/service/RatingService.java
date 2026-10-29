@@ -110,6 +110,15 @@ public class RatingService {
                 .toList();
     }
 
+    /** A user's current rating for one time control, or the default if they have not played it. */
+    @Transactional(readOnly = true)
+    public int currentRating(UUID userId, TimeControl timeControl) {
+        return ratingRepo
+                .findByUser_IdAndTimeControl(userId, timeControl)
+                .map(Rating::getRating)
+                .orElse(Rating.DEFAULT_RATING);
+    }
+
     private Rating lockRating(UUID userId, TimeControl timeControl) {
         // Every user gets their rating rows at registration; this covers accounts that predate them.
         return ratingRepo

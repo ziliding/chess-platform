@@ -15,9 +15,11 @@ import me.zilid.chessplatform.exception.GameNotFoundException;
 import me.zilid.chessplatform.model.dto.GameCreatedResponse;
 import me.zilid.chessplatform.model.dto.GameJoinResponse;
 import me.zilid.chessplatform.model.dto.GameStateResponse;
+import me.zilid.chessplatform.model.dto.SeekResponse;
 import me.zilid.chessplatform.security.SecurityConfig;
 import me.zilid.chessplatform.security.UserPrincipal;
 import me.zilid.chessplatform.service.MatchService;
+import me.zilid.chessplatform.service.MatchmakingService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -49,6 +51,9 @@ class GameControllerWebMvcTest {
 
     @MockitoBean
     private MatchService matchService;
+
+    @MockitoBean
+    private MatchmakingService matchmakingService;
 
     @Test
     void gameStateRequiresAuthentication() {
@@ -323,5 +328,22 @@ class GameControllerWebMvcTest {
                 .exchange();
         assertThat(result).hasStatus(HttpStatus.CONFLICT);
         assertThat(result).bodyJson().extractingPath("$.detail").isEqualTo("Game is already over");
+    }
+
+    @Test
+    void seekingReturnsTheMatchedGame() {
+        when(matchmakingService.seek(PLAYER.toPlayer(), ClockSetting.ofMinutes(3, 2)))
+                .thenReturn(SeekResponse.matched(GAME_ID));
+
+        MvcTestResult result = mvcTester
+                .post()
+                .uri("/api/matchmaking")
+                .param("timeControl", "3+2")
+                .with(user(PLAYER))
+                .exchange();
+        assertThat(result).hasStatus(HttpStatus.OK);
+        assertThat(result).bodyJson().extractingPath("$.status").isEqualTo("MATCHED");
+        assertThat(result).bodyJson().extractingPath("$.gameId").isEqualTo(GAME_ID.toString());
+        assertThat(mvcTester.post().uri("/api/matchmaking")).hasStatus(HttpStatus.UNAUTHORIZED);
     }
 }

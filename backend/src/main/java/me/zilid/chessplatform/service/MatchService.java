@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 import me.zilid.chessplatform.chess.Color;
 import me.zilid.chessplatform.chess.PieceType;
@@ -98,6 +99,25 @@ public class MatchService {
 
         return new GameCreatedResponse(
                 gameId, color, clockSetting.toString(), clockSetting.category(), game.getFen(), "/game/" + gameId);
+    }
+
+    /**
+     * Start a game between two paired players, colours chosen at random. Both seats are filled, so the first-move timer
+     * runs from now and the game is aborted if either player never shows up.
+     */
+    public UUID createMatchedGame(Player first, Player second, ClockSetting clockSetting) {
+        UUID gameId = UUID.randomUUID();
+        boolean firstIsWhite = ThreadLocalRandom.current().nextBoolean();
+        Player white = firstIsWhite ? first : second;
+        Player black = firstIsWhite ? second : first;
+        logger.info(
+                "Creating matched {} game {}: {} vs {}",
+                clockSetting,
+                gameId,
+                white.displayName(),
+                black.displayName());
+        saveGame(gameId, new Game(white, black, clockSetting, clock.instant()));
+        return gameId;
     }
 
     public GameJoinResponse joinGame(UUID gameId, Player currentUser) {

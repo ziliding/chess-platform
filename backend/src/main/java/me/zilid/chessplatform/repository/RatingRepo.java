@@ -17,6 +17,8 @@ public interface RatingRepo extends CrudRepository<Rating, UUID> {
 
     List<Rating> findByUser_Id(UUID userId);
 
+    Optional<Rating> findByUser_IdAndTimeControl(UUID userId, TimeControl timeControl);
+
     /**
      * Load a rating row and hold a row lock until the transaction ends, so concurrent games for the same player apply
      * their rating changes one after another.

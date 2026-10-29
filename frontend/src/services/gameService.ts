@@ -1,5 +1,5 @@
 import api from './api';
-import { MatchRecord, PageResponse, GameCreatedResponse, GameJoinResponse, GameState, DEFAULT_CLOCK_SETTING } from '../types';
+import { MatchRecord, PageResponse, GameCreatedResponse, GameJoinResponse, GameState, SeekResponse, DEFAULT_CLOCK_SETTING } from '../types';
 
 export const gameService = {
   createGame: async (color: 'WHITE' | 'BLACK', clockSetting: string = DEFAULT_CLOCK_SETTING): Promise<GameCreatedResponse> => {
@@ -7,6 +7,16 @@ export const gameService = {
       params: { color, timeControl: clockSetting }
     });
     return response.data;
+  },
+
+  // Poll about once a second while searching; a seek that stops being polled expires on the server
+  seek: async (clockSetting: string): Promise<SeekResponse> => {
+    const response = await api.post('/matchmaking', null, { params: { timeControl: clockSetting } });
+    return response.data;
+  },
+
+  cancelSeek: async (clockSetting: string): Promise<void> => {
+    await api.delete('/matchmaking', { params: { timeControl: clockSetting } });
   },
 
   joinGame: async (gameId: string): Promise<GameJoinResponse> => {
