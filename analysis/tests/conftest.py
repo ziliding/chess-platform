@@ -6,7 +6,7 @@ import chess.engine
 import pytest
 import pytest_asyncio
 
-from analysis.worker import default_stockfish_path
+from analysis.jobs import default_stockfish_path, open_engine
 
 STOCKFISH = default_stockfish_path()
 FIXTURES = Path(__file__).resolve().parents[2] / "contracts" / "analysis" / "v1"
@@ -37,8 +37,8 @@ def amqp_url() -> Iterator[str]:
 
 @pytest_asyncio.fixture
 async def engine() -> AsyncIterator[chess.engine.UciProtocol]:
-    transport, engine = await chess.engine.popen_uci(STOCKFISH)
-    await engine.configure({"Threads": 1, "Hash": 16})
+    # The production engine settings, so tests and the service cannot drift apart
+    transport, engine = await open_engine(STOCKFISH)
     yield engine
     await engine.quit()
     transport.close()

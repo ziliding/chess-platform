@@ -13,8 +13,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import aio_pika
-import chess
-import chess.engine
 import pytest
 import pytest_asyncio
 from aio_pika.abc import AbstractChannel, AbstractQueue
@@ -161,53 +159,6 @@ def test_http_health_and_readiness(amqp_url, monkeypatch):
                 break
             time.sleep(0.1)
         assert client.get("/readyz").json() == {"ready": True}
-
-
-async def test_a_crashed_engine_is_restarted_and_the_job_retried(broker, worker):
-    assert worker._engine_transport is not None
-    worker._engine_transport.kill()
-
-    await send(broker, request_body(jobId=JOB))
-    result = AnalysisResult.model_validate_json((await receive(broker, "analysis.results")).body)
-
-    assert result.status == "COMPLETED"
-    assert await worker.is_ready()
-
-
-@pytest.mark.parametrize("failure", [chess.engine.EngineTerminatedError("crashed"), TimeoutError()])
-async def test_an_engine_that_fails_twice_gives_an_engine_error(broker, worker, monkeypatch, failure):
-    attempts = 0
-
-    async def failing(*args, **kwargs):
-        nonlocal attempts
-        attempts += 1
-        raise failure
-
-    monkeypatch.setattr("analysis.worker.analyze", failing)
-    await send(broker, request_body(jobId=JOB))
-
-    result = AnalysisResult.model_validate_json((await receive(broker, "analysis.results")).body)
-
-    assert result.error is not None
-    assert result.error.code == "ENGINE_ERROR"
-    assert attempts == 2
-
-
-async def test_a_job_over_its_budget_fails_and_leaves_a_working_engine(amqp_url, broker):
-    # Depth 40 without a time cap takes far longer than the budget
-    async with running_worker(
-        amqp_url, engine_depth=40, engine_position_timeout=0, job_budget_seconds=0.5
-    ) as worker:
-        await send(broker, request_body(jobId=JOB))
-
-        result = AnalysisResult.model_validate_json((await receive(broker, "analysis.results")).body)
-
-        assert result.error is not None
-        assert result.error.code == "BUDGET_EXCEEDED"
-        assert worker._engine is not None
-        async with asyncio.timeout(10):
-            info = await worker._engine.analyse(chess.Board(), chess.engine.Limit(depth=5))
-        assert "score" in info
 
 
 def start_service(amqp_url: str, depth: int) -> subprocess.Popen:

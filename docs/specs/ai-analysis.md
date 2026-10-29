@@ -103,7 +103,9 @@ function of its input message. That makes redelivery safe. Scale it by running m
 
 **FastAPI's role** is the process host. Its lifespan starts the AMQP consumer and the Stockfish process, and it serves
 `/healthz` (liveness) and `/readyz`. `/readyz` returns 200 only when the AMQP channel is open, the consumer is
-registered, and Stockfish answers `isready`. The port stays internal: the gateway does not route to it.
+registered, and the Stockfish process is alive. It does not send `isready`: UCI runs one command at a time, so a probe
+during a job would time out, and the cancelled command would leave python-chess unable to use the engine. The port
+stays internal: the gateway does not route to it.
 
 ### Layout of `analysis/`
 
@@ -114,7 +116,8 @@ analysis/
   src/analysis/
     contracts.py              # Pydantic v1 models
     engine.py                 # Stockfish analysis, classification, template summary (pure apart from the engine)
-    worker.py                 # consume → analyze → publish → ack; error → result-code mapping
+    jobs.py                   # JobRunner: engine session, job budget, engine retry, error codes; Settings
+    worker.py                 # the broker adapter: envelope checks → JobRunner.run → publish → ack
     main.py                   # FastAPI app, lifespan, health endpoints
     llm.py                    # phase 4
   tests/

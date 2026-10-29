@@ -5,7 +5,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response
 
-from analysis.worker import Settings, Worker
+from analysis.jobs import Settings
+from analysis.worker import Worker
 
 # Below compose's 60 s stop_grace_period, so the container is not killed while the worker finishes cleanly.
 # ponytail: a job can take up to JOB_BUDGET_SECONDS (120 s), longer than this; one still running is
