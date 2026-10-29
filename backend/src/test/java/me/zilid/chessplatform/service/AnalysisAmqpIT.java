@@ -3,9 +3,12 @@ package me.zilid.chessplatform.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.DefaultConsumer;
 import java.io.IOException;
 import java.lang.reflect.Type;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -34,6 +37,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.amqp.core.AmqpAdmin;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
+import org.springframework.amqp.rabbit.connection.Connection;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
@@ -44,6 +48,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.messaging.converter.JacksonJsonMessageConverter;
 import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
@@ -107,6 +112,9 @@ class AnalysisAmqpIT {
 
     @Autowired
     private JsonMapper jsonMapper;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private final List<StompSession> sessions = new CopyOnWriteArrayList<>();
     private final List<JsonNode> received = new CopyOnWriteArrayList<>();
@@ -381,11 +389,11 @@ class AnalysisAmqpIT {
     @Test
     void aResultThatCannotBeUnderstoodEndsUpInTheDeadLetterQueue() {
         drain("analysis.results.dlq");
-        rabbitTemplate.send("analysis", "result", json("{\"jobId\": \"not-a-uuid\"}".getBytes()));
+        rabbitTemplate.send("analysis", "result", json("{\"jobId\": \"not-a-uuid\"}".getBytes(StandardCharsets.UTF_8)));
         // Understood, but a COMPLETED result with no analysis in it: retried, then rejected
         String hollow = "{\"schemaVersion\":1,\"jobId\":\"%s\",\"matchId\":\"%s\",\"status\":\"COMPLETED\"}"
                 .formatted(UUID.randomUUID(), UUID.randomUUID());
-        rabbitTemplate.send("analysis", "result", json(hollow.getBytes()));
+        rabbitTemplate.send("analysis", "result", json(hollow.getBytes(StandardCharsets.UTF_8)));
 
         List<Message> deadLetters = new CopyOnWriteArrayList<>();
         await("both messages dead-lettered").atMost(TIMEOUT).until(() -> {
@@ -395,6 +403,118 @@ class AnalysisAmqpIT {
             }
             return deadLetters.size() == 2;
         });
+    }
+
+    @Test
+    void aFullQueueRefusesTheRequestAsBusy() throws Exception {
+        Player alice = register("alice");
+        Player bob = register("bob");
+        UUID matchId = archivedMatch(alice, bob);
+        // A worker that takes one job and never finishes it keeps the queue's consumer while the backlog fills
+        fakeAnalysisService.stop();
+        Connection connection = connectionFactory.createConnection();
+        Channel stuckWorker = connection.createChannel(false);
+        try {
+            stuckWorker.basicQos(1);
+            stuckWorker.basicConsume("analysis.requests", false, new DefaultConsumer(stuckWorker));
+            await("stuck worker consuming").atMost(TIMEOUT).until(() -> consumers() > 0);
+            // Past the limit, and confirmed, so the queue is rejecting publishes by the time the request comes
+            rabbitTemplate.invoke(operations -> {
+                for (int i = 0; i < 1100; i++) {
+                    operations.send("analysis", "request", json("{}".getBytes(StandardCharsets.UTF_8)));
+                }
+                operations.waitForConfirms(TIMEOUT.toMillis());
+                return null;
+            });
+
+            var refused = post(alice, matchId)
+                    .onStatus(status -> true, (request, response) -> {})
+                    .toEntity(JsonNode.class);
+
+            assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(Objects.requireNonNull(refused.getBody()).get("code").asString())
+                    .isEqualTo("ANALYSIS_BUSY");
+            JsonNode stored = get(alice, matchId);
+            assertThat(stored.get("status").asString()).isEqualTo("FAILED");
+            assertThat(stored.get("errorCode").asString()).isEqualTo("UNAVAILABLE");
+        } finally {
+            stuckWorker.close(); // returns its message to the queue, so purge after
+            connection.close();
+            amqpAdmin.purgeQueue("analysis.requests", false);
+        }
+    }
+
+    @Test
+    void aDuplicateOrLateResultChangesNothing() throws Exception {
+        Player alice = register("alice");
+        Player bob = register("bob");
+        UUID matchId = archivedMatch(alice, bob);
+        BlockingQueue<JsonNode> updates = listen(alice);
+        post(alice, matchId).toBodilessEntity();
+        JsonNode completed = next(updates);
+        String jobId = received.getFirst().get("jobId").asString();
+
+        // The same result again (a redelivered request), a failure arriving after it, and an old job's result
+        sendResult("result.completed.json", jobId, matchId);
+        sendResult("result.failed.json", jobId, matchId);
+        sendResult("result.failed.json", UUID.randomUUID().toString(), matchId);
+
+        assertThat(updates.poll(2, TimeUnit.SECONDS)).as("no further push").isNull();
+        JsonNode stored = get(bob, matchId);
+        assertThat(stored.get("status").asString()).isEqualTo("COMPLETED");
+        assertThat(stored.get("completedAt")).isEqualTo(completed.get("completedAt"));
+    }
+
+    @Test
+    void aResultThatCannotBeStoredIsRetriedThenDeadLetteredAndTheJobTimesOut() throws Exception {
+        behaviour.set(Behaviour.STAY_SILENT);
+        Player alice = register("alice");
+        Player bob = register("bob");
+        UUID matchId = archivedMatch(alice, bob);
+        BlockingQueue<JsonNode> updates = listen(alice);
+        post(alice, matchId).toBodilessEntity();
+        await("request received").atMost(TIMEOUT).until(() -> !received.isEmpty());
+        String jobId = received.getFirst().get("jobId").asString();
+        drain("analysis.results.dlq");
+        // The database refuses every write to this job, for every test context listening on the results queue
+        jdbcTemplate.execute("""
+                CREATE FUNCTION refuse_job() RETURNS trigger LANGUAGE plpgsql AS
+                $$ BEGIN RAISE EXCEPTION 'database unavailable'; END $$;
+                CREATE TRIGGER refuse_job BEFORE UPDATE ON game_analyses
+                    FOR EACH ROW WHEN (OLD.job_id = '%s') EXECUTE FUNCTION refuse_job();
+                """.formatted(jobId));
+        try {
+            long sent = System.nanoTime();
+            sendResult("result.completed.json", jobId, matchId);
+
+            AtomicReference<@Nullable Message> deadLetter = new AtomicReference<>();
+            await("result dead-lettered").atMost(TIMEOUT).until(() -> {
+                deadLetter.set(rabbitTemplate.receive("analysis.results.dlq"));
+                return deadLetter.get() != null;
+            });
+            // Three attempts, 1 s and 2 s apart; a fourth would come 4 s later
+            assertThat(Duration.ofNanos(System.nanoTime() - sent))
+                    .isBetween(Duration.ofSeconds(3), Duration.ofSeconds(6));
+            assertThat(jsonMapper
+                            .readTree(Objects.requireNonNull(deadLetter.get()).getBody())
+                            .get("jobId")
+                            .asString())
+                    .isEqualTo(jobId);
+        } finally {
+            jdbcTemplate.execute("DROP TRIGGER refuse_job ON game_analyses; DROP FUNCTION refuse_job();");
+        }
+
+        // The database is back: the sweeper fails the job, which can be retried
+        JsonNode timedOut = next(updates);
+        assertThat(timedOut.get("status").asString()).isEqualTo("FAILED");
+        assertThat(timedOut.get("errorCode").asString()).isEqualTo("TIMED_OUT");
+    }
+
+    private void sendResult(String fixture, String jobId, UUID matchId) throws IOException {
+        ObjectNode result = (ObjectNode) jsonMapper.readTree(Files.readAllBytes(FIXTURES.resolve(fixture)));
+        result.put("jobId", jobId);
+        result.put("matchId", matchId.toString());
+        rabbitTemplate.send("analysis", "result", json(jsonMapper.writeValueAsBytes(result)));
     }
 
     private void drain(String queue) {

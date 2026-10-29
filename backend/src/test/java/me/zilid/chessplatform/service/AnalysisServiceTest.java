@@ -321,6 +321,26 @@ class AnalysisServiceTest {
     }
 
     @Test
+    void aBrokerOutageAtPublishFailsTheJob() {
+        when(analysisRepo.findByMatchId(MATCH_ID)).thenReturn(Optional.empty());
+        when(analysisRepo.fail(any(), eq("UNAVAILABLE"))).thenReturn(1);
+        doThrow(new AmqpConnectException(new RuntimeException("connection refused")))
+                .when(rabbitTemplate)
+                .convertAndSend(
+                        eq("analysis"),
+                        eq("request"),
+                        any(Object.class),
+                        any(MessagePostProcessor.class),
+                        any(CorrelationData.class));
+
+        assertThatThrownBy(() -> service.request(MATCH_ID, WHITE_ID))
+                .isInstanceOfSatisfying(
+                        AnalysisUnavailableException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("ANALYSIS_UNAVAILABLE"));
+        verify(analysisRepo).fail(any(), eq("UNAVAILABLE"));
+    }
+
+    @Test
     void aPublishFailureAfterTheResultArrivedIsNotAnError() {
         rowAfterInsert();
         when(analysisRepo.fail(any(), eq("UNAVAILABLE"))).thenReturn(0);

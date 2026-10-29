@@ -57,6 +57,9 @@ public class ChessGameSimulation extends Simulation {
     private static final Duration RAMP = duration("LOADTEST_RAMP", DEFAULTS.ramp());
     private static final Duration DURATION = duration("LOADTEST_DURATION", DEFAULTS.duration());
     private static final Duration THINK_TIME = duration("LOADTEST_THINK_TIME", "1s");
+    // Unset: no analysis. `completed` or `unavailable`: what requesting the archived game's analysis must give
+    private static final String EXPECT_ANALYSIS = env("LOADTEST_EXPECT_ANALYSIS", "none");
+    private static final Duration ANALYSIS_TIMEOUT = Duration.ofSeconds(60);
 
     // Pairs between arrival and departure, for the breakpoint report
     private static final AtomicInteger activePairs = new AtomicInteger();
@@ -176,6 +179,41 @@ public class ChessGameSimulation extends Simulation {
         return exec(plies);
     }
 
+    /** Request an analysis of the game just archived and check the answer LOADTEST_EXPECT_ANALYSIS names. */
+    private static ChainBuilder analysis() {
+        return switch (EXPECT_ANALYSIS) {
+            case "none" -> exec(session -> session);
+            case "completed" ->
+                exec(http("Request analysis")
+                                .post("/api/games/#{matchId}/analysis")
+                                .header("Cookie", sessionCookie("white"))
+                                .check(status().in(200, 202), jmesPath("status").saveAs("analysisStatus")))
+                        .asLongAsDuring(
+                                session -> session.getString("analysisStatus").equals("QUEUED"), ANALYSIS_TIMEOUT)
+                        .on(
+                                pause(Duration.ofSeconds(1)),
+                                exec(http("Get analysis")
+                                        .get("/api/games/#{matchId}/analysis")
+                                        .header("Cookie", sessionCookie("white"))
+                                        .check(
+                                                status().is(200),
+                                                jmesPath("status").saveAs("analysisStatus"))))
+                        // A failed or still queued analysis fails this request, so the run fails
+                        .exec(http("Get completed analysis")
+                                .get("/api/games/#{matchId}/analysis")
+                                .header("Cookie", sessionCookie("white"))
+                                .check(status().is(200), jmesPath("status").is("COMPLETED")));
+            case "unavailable" ->
+                exec(http("Request analysis while unavailable")
+                        .post("/api/games/#{matchId}/analysis")
+                        .header("Cookie", sessionCookie("white"))
+                        .check(status().is(503), jmesPath("code").is("ANALYSIS_UNAVAILABLE")));
+            default ->
+                throw new IllegalArgumentException(
+                        "LOADTEST_EXPECT_ANALYSIS must be completed or unavailable, not " + EXPECT_ANALYSIS);
+        };
+    }
+
     private static final ChainBuilder game = exec(
                     http("Create game")
                             .post("/api/games")
@@ -208,7 +246,8 @@ public class ChessGameSimulation extends Simulation {
                     http("Get PGN")
                             .get("/api/games/#{matchId}/pgn")
                             .header("Cookie", sessionCookie("white"))
-                            .check(status().is(200), substring("Rd8#")));
+                            .check(status().is(200), substring("Rd8#")))
+            .exec(analysis());
 
     // After a failure the pair stops: its sockets may still be open, and the rest of the game would only fail too
     private static final ScenarioBuilder players = scenario("Players")

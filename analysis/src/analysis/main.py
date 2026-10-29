@@ -7,6 +7,11 @@ from fastapi import FastAPI, Response
 
 from analysis.worker import Settings, Worker
 
+# Below compose's 60 s stop_grace_period, so the container is not killed while the worker finishes cleanly.
+# ponytail: a job can take up to JOB_BUDGET_SECONDS (120 s), longer than this; one still running is
+# cancelled and redelivered. Raise the grace and stop_grace_period together if long games are often cut off.
+SHUTDOWN_GRACE_SECONDS = 50
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
@@ -18,6 +23,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     try:
         yield
     finally:
+        # On SIGTERM: stop consuming and let the job in progress finish before the connection closes
+        await worker.shutdown(SHUTDOWN_GRACE_SECONDS)
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 

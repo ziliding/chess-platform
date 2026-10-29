@@ -5,6 +5,7 @@ can never create a queue with different arguments.
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -18,8 +19,8 @@ import chess.engine
 from aio_pika.abc import AbstractIncomingMessage, AbstractRobustChannel, AbstractRobustConnection
 from pydantic import ValidationError
 
-from analysis.contracts import SCHEMA_VERSION, AnalysisRequest, AnalysisResult, ErrorInfo
-from analysis.engine import AnalysisError, analyze
+from analysis.contracts import SCHEMA_VERSION, AnalysisRequest, AnalysisResult, ErrorCode, ErrorInfo
+from analysis.engine import AnalysisError, Analyzed, analyze
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +45,10 @@ class Settings:
     engine_position_timeout: float = field(
         default_factory=lambda: float(os.environ.get("ENGINE_POSITION_TIMEOUT", "2"))
     )
+    # Seconds a job may take, unless its deadline comes first
+    job_budget_seconds: float = field(
+        default_factory=lambda: float(os.environ.get("JOB_BUDGET_SECONDS", "120"))
+    )
 
 
 class Worker:
@@ -53,13 +58,27 @@ class Worker:
         self._engine: chess.engine.UciProtocol | None = None
         self._engine_transport: asyncio.SubprocessTransport | None = None
         self._connection: AbstractRobustConnection | None = None
+        self._queue: aio_pika.abc.AbstractQueue | None = None
+        self._consumer_tag: str | None = None
+        # Held while a job runs, so shutdown can wait for it
+        self._job = asyncio.Lock()
 
-    async def run(self) -> None:
-        """Serve until cancelled; reconnect to the broker and wait for Spring to declare the queue."""
+    async def _start_engine(self) -> None:
         transport, engine = await chess.engine.popen_uci(self.settings.stockfish_path)
         await engine.configure({"Threads": 1, "Hash": 64})
         self._engine = engine
         self._engine_transport = transport
+
+    async def _restart_engine(self) -> None:
+        """Replace the engine: after a crash, hang or cancelled command, python-chess cannot use it again."""
+        if self._engine_transport is not None:
+            self._engine_transport.close()  # kills the process if it is still running
+        self._engine = self._engine_transport = None
+        await self._start_engine()
+
+    async def run(self) -> None:
+        """Serve until cancelled; reconnect to the broker and wait for Spring to declare the queue."""
+        await self._start_engine()
         try:
             while True:
                 try:
@@ -72,8 +91,31 @@ class Worker:
                     await asyncio.sleep(2)
         finally:
             self.ready = False
-            await engine.quit()
-            transport.close()
+            if self._engine is not None:
+                with contextlib.suppress(Exception):
+                    async with asyncio.timeout(2):
+                        await self._engine.quit()
+            if self._engine_transport is not None:
+                self._engine_transport.close()
+
+    async def shutdown(self, grace: float) -> None:
+        """Stop taking jobs and give the one in progress `grace` seconds to finish; then cancel `run`.
+
+        A job still running after that goes back to the queue when the connection closes, and RabbitMQ counts
+        that as a delivery, as it does when the worker dies.
+        """
+        self.ready = False
+        if self._queue is not None and self._consumer_tag is not None:
+            try:
+                await self._queue.cancel(self._consumer_tag)
+            except Exception as e:  # noqa: BLE001 - the channel may already be gone
+                log.info("Could not cancel the consumer: %s", e)
+        try:
+            async with asyncio.timeout(grace):
+                async with self._job:
+                    pass
+        except TimeoutError:
+            log.warning("A job is still running after %ss; it will be redelivered", grace)
 
     async def _consume(self) -> None:
         connection = await aio_pika.connect_robust(self.settings.amqp_url)
@@ -88,7 +130,8 @@ class Worker:
             async def on_message(message: AbstractIncomingMessage) -> None:
                 await self.handle(message, channel, exchange)
 
-            await queue.consume(on_message)
+            self._queue = queue
+            self._consumer_tag = await queue.consume(on_message)
             self.ready = True
             log.info("Consuming %s", REQUEST_QUEUE)
             await asyncio.Event().wait()
@@ -105,6 +148,12 @@ class Worker:
         message: AbstractIncomingMessage,
         channel: AbstractRobustChannel,
         exchange: aio_pika.abc.AbstractExchange,
+    ) -> None:
+        async with self._job:
+            await self._handle(message, exchange)
+
+    async def _handle(
+        self, message: AbstractIncomingMessage, exchange: aio_pika.abc.AbstractExchange
     ) -> None:
         try:
             raw = json.loads(message.body)
@@ -149,23 +198,17 @@ class Worker:
         await message.ack()
 
     async def _analyze(self, request: AnalysisRequest) -> AnalysisResult:
-        assert self._engine is not None
+        budget = min((request.deadline - datetime.now(UTC)).total_seconds(), self.settings.job_budget_seconds)
         try:
-            analyzed = await analyze(
-                self._engine,
-                request.pgn,
-                self.settings.engine_depth,
-                self.settings.engine_position_timeout,
-                game_token=request.job_id,
-            )
+            async with asyncio.timeout(budget):
+                analyzed = await self._analyze_with_retry(request)
+        except TimeoutError:
+            log.warning("Job %s exceeded its %.0fs budget", request.job_id, budget)
+            await self._restart_engine()  # its command was cancelled mid-search
+            return self._failed(request, "BUDGET_EXCEEDED", f"not finished within {budget:.0f}s")
         except AnalysisError as e:
-            log.info("Job %s is permanently invalid: %s", request.job_id, e.message)
-            return AnalysisResult(
-                job_id=request.job_id,
-                match_id=request.match_id,
-                status="FAILED",
-                error=ErrorInfo(code=e.code, message=e.message),
-            )
+            log.info("Job %s failed: %s", request.job_id, e.message)
+            return self._failed(request, e.code, e.message)
         return AnalysisResult(
             job_id=request.job_id,
             match_id=request.match_id,
@@ -174,6 +217,35 @@ class Worker:
             initial_eval=analyzed.initial_eval,
             moves=analyzed.moves,
             summary=analyzed.summary,
+        )
+
+    async def _analyze_with_retry(self, request: AnalysisRequest) -> Analyzed:
+        """Analyze, and if the engine crashes or hangs, once more on a new engine."""
+        for attempt in (1, 2):
+            if self._engine is None:
+                await self._start_engine()  # a failed restart left none
+            assert self._engine is not None
+            try:
+                return await analyze(
+                    self._engine,
+                    request.pgn,
+                    self.settings.engine_depth,
+                    self.settings.engine_position_timeout,
+                    game_token=request.job_id,
+                )
+            except (chess.engine.EngineError, TimeoutError) as e:
+                # TimeoutError here is the per-position hang guard; the job budget arrives as a cancellation
+                log.warning("Engine failed on job %s (attempt %d): %r", request.job_id, attempt, e)
+                await self._restart_engine()
+        raise AnalysisError("ENGINE_ERROR", "the engine crashed or hung twice")
+
+    @staticmethod
+    def _failed(request: AnalysisRequest, code: ErrorCode, message: str) -> AnalysisResult:
+        return AnalysisResult(
+            job_id=request.job_id,
+            match_id=request.match_id,
+            status="FAILED",
+            error=ErrorInfo(code=code, message=message),
         )
 
     @staticmethod

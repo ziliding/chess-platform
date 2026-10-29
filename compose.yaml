@@ -116,8 +116,9 @@ services:
     environment:
       AMQP_URL: amqp://${RABBITMQ_USER:-chess}:${RABBITMQ_PASSWORD:-password}@rabbitmq:5672/
       ENGINE_DEPTH: ${ANALYSIS_ENGINE_DEPTH:-16}
-    # Room for a job in progress to finish; until the worker handles SIGTERM (phase 2), a stop cancels it and
-    # RabbitMQ redelivers it
+      ENGINE_POSITION_TIMEOUT: 2
+      JOB_BUDGET_SECONDS: 120
+    # On SIGTERM the worker stops consuming and gets 50 s to finish its job; one still running is redelivered
     stop_grace_period: 60s
     depends_on:
       rabbitmq:
@@ -173,6 +174,7 @@ services:
       LOADTEST_RAMP: ${LOADTEST_RAMP:-}
       LOADTEST_DURATION: ${LOADTEST_DURATION:-}
       LOADTEST_THINK_TIME: ${LOADTEST_THINK_TIME:-}
+      LOADTEST_EXPECT_ANALYSIS: ${LOADTEST_EXPECT_ANALYSIS:-}
     depends_on:
       # The gateway itself waits for healthy backends
       gateway:

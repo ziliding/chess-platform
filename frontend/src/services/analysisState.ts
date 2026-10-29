@@ -49,7 +49,7 @@ export function failureNotice(errorCode: string | null): Notice {
       return { text: "This game can't be analyzed.", retryable: false };
     default:
       // UNAVAILABLE, UNSUPPORTED_SCHEMA_VERSION and anything newer than this client
-      return { text: 'Analysis is temporarily unavailable.', retryable: true };
+      return { text: 'Analysis is temporarily unavailable. Try again in a few minutes.', retryable: true };
   }
 }
 

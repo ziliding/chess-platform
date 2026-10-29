@@ -140,7 +140,17 @@ jobs:
         run: docker compose --profile app up --detach --build --wait
 
       - name: Run the smoke load test
+        env:
+          LOADTEST_EXPECT_ANALYSIS: completed
         run: docker compose --profile app --profile loadtest run --rm --build loadtest
+
+      # Without the analysis service, a request is refused with 503 instead of queued for nobody
+      - name: Run the smoke load test without the analysis service
+        env:
+          LOADTEST_EXPECT_ANALYSIS: unavailable
+        run: |
+          docker compose --profile app stop analysis
+          docker compose --profile app --profile loadtest run --rm loadtest
 
       - name: Upload load test report
         if: always()

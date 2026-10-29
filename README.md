@@ -291,14 +291,15 @@ Load-test accounts are named `lt` followed by the first 12 characters of a UUID,
 can tell them apart from real users. These
 variables override the type's defaults:
 
-| Variable              | Default                 | Purpose                                                              |
-| --------------------- | ----------------------- | -------------------------------------------------------------------- |
-| `LOADTEST_TYPE`       | `smoke`                 | One of the types above                                               |
-| `LOADTEST_TARGET_URL` | `http://localhost:3000` | Gateway or Vite dev server to test; `http://gateway:3000` in Compose |
-| `LOADTEST_USERS`      | per type                | Concurrent players, two per game                                     |
-| `LOADTEST_RAMP`       | per type                | Time over which players arrive                                       |
-| `LOADTEST_DURATION`   | per type                | How long each pair keeps starting new games, such as `30s` or `1h`   |
-| `LOADTEST_THINK_TIME` | `1s`                    | Pause before each move, such as `0.5s`                               |
+| Variable                   | Default                 | Purpose                                                                                           |
+| -------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------- |
+| `LOADTEST_TYPE`            | `smoke`                 | One of the types above                                                                            |
+| `LOADTEST_TARGET_URL`      | `http://localhost:3000` | Gateway or Vite dev server to test; `http://gateway:3000` in Compose                              |
+| `LOADTEST_USERS`           | per type                | Concurrent players, two per game                                                                  |
+| `LOADTEST_RAMP`            | per type                | Time over which players arrive                                                                    |
+| `LOADTEST_DURATION`        | per type                | How long each pair keeps starting new games, such as `30s` or `1h`                                |
+| `LOADTEST_THINK_TIME`      | `1s`                    | Pause before each move, such as `0.5s`                                                            |
+| `LOADTEST_EXPECT_ANALYSIS` | unset                   | `completed` or `unavailable`: request each game's analysis and expect that answer; unset skips it |
 
 ---
 
