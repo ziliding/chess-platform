@@ -185,7 +185,7 @@ public class ChessGameSimulation extends Simulation {
             case "none" -> exec(session -> session);
             case "completed" ->
                 exec(http("Request analysis")
-                                .post("/api/games/#{matchId}/analysis")
+                                .post("/api/matches/#{matchId}/analysis")
                                 .header("Cookie", sessionCookie("white"))
                                 .check(status().in(200, 202), jmesPath("status").saveAs("analysisStatus")))
                         .asLongAsDuring(
@@ -193,19 +193,19 @@ public class ChessGameSimulation extends Simulation {
                         .on(
                                 pause(Duration.ofSeconds(1)),
                                 exec(http("Get analysis")
-                                        .get("/api/games/#{matchId}/analysis")
+                                        .get("/api/matches/#{matchId}/analysis")
                                         .header("Cookie", sessionCookie("white"))
                                         .check(
                                                 status().is(200),
                                                 jmesPath("status").saveAs("analysisStatus"))))
                         // A failed or still queued analysis fails this request, so the run fails
                         .exec(http("Get completed analysis")
-                                .get("/api/games/#{matchId}/analysis")
+                                .get("/api/matches/#{matchId}/analysis")
                                 .header("Cookie", sessionCookie("white"))
                                 .check(status().is(200), jmesPath("status").is("COMPLETED")));
             case "unavailable" ->
                 exec(http("Request analysis while unavailable")
-                        .post("/api/games/#{matchId}/analysis")
+                        .post("/api/matches/#{matchId}/analysis")
                         .header("Cookie", sessionCookie("white"))
                         .check(status().is(503), jmesPath("code").is("ANALYSIS_UNAVAILABLE")));
             default ->
@@ -244,7 +244,7 @@ public class ChessGameSimulation extends Simulation {
                             .header("Cookie", sessionCookie("white"))
                             .check(status().is(200), jmesPath("content[0].id").saveAs("matchId")),
                     http("Get PGN")
-                            .get("/api/games/#{matchId}/pgn")
+                            .get("/api/matches/#{matchId}/pgn")
                             .header("Cookie", sessionCookie("white"))
                             .check(status().is(200), substring("Rd8#")))
             .exec(analysis());

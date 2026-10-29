@@ -21,8 +21,8 @@ runs in a separate, stateless Python service. Spring stays the owner of games, u
 | LLM                   | Phase 4. The client is any OpenAI-compatible endpoint (`base_url`, `model`, `api_key`). Dev uses a local model (Ollama or Docker Model Runner, under 10 GB), with OpenRouter as the fallback. CI uses a fake server. With no LLM configured, the template summary is used. |
 | Trigger               | On request only. Nothing runs automatically after a game ends.                                                                                                                              |
 | Who may request       | Only the two players of the match, with at most 3 queued jobs per user.                                                                                                                     |
-| Who may view          | Any authenticated user. This matches `GET /api/games/{id}/pgn` today.                                                                                                                       |
-| UI                    | A new review page, `/games/:matchId/analysis`, opened from History. It has a board you can step through, an annotated move list, the mistakes with the best move, and the summary.          |
+| Who may view          | Any authenticated user. This matches `GET /api/matches/{id}/pgn` today.                                                                                                                       |
+| UI                    | A new review page, `/matches/:matchId/analysis`, opened from History. It has a board you can step through, an annotated move list, the mistakes with the best move, and the summary.          |
 
 ### Assumptions
 
@@ -57,7 +57,7 @@ The following are not part of this work:
    Phase 1 adds the AMQP starter, port 5672 in compose and in the test container, and `SPRING_RABBITMQ_*` settings.
 2. **The live game ID is not the match ID.** `MatchService.createGame` uses `UUID.randomUUID()` for the Redis game.
    `MatchRecord` gets its own UUIDv7 from `BaseEntity`. The Redis game expires one minute after it ends. So analysis
-   reads the PGN from `match_records.pgn`, keyed on the match ID. The existing `/api/games/{id}/pgn` already takes a
+   reads the PGN from `match_records.pgn`, keyed on the match ID. The existing `/api/matches/{id}/pgn` already takes a
    match ID, and the new endpoints follow the same convention.
 3. **The stored PGN is `Game.getNotation()`.** It has non-standard tags (`StartTime`, `EndTime`), SAN movetext from the
    standard starting position, and a result token. `python-chess` reads this format. The contract fixtures include
@@ -82,7 +82,7 @@ The following are not part of this work:
 ## 3. Architecture
 
 ```
-Browser ── POST /api/games/{matchId}/analysis ──▶ Spring (any instance)
+Browser ── POST /api/matches/{matchId}/analysis ──▶ Spring (any instance)
    ▲                                               │ 1 INSERT game_analyses (QUEUED, jobId, deadline) → Postgres, commit
    │                                               │ 2 publish AnalysisRequest v1 (confirmed) ──▶ exchange `analysis` ─▶ queue analysis.requests
    │                                                                                                         │ prefetch 1
@@ -382,8 +382,8 @@ CREATE INDEX idx_game_analyses_queued_deadline ON game_analyses (deadline) WHERE
 
 | Method and path                      | Who                        | Responses                                                                                                                                                                                                 |
 | ------------------------------------ | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/games/{matchId}/analysis`  | any authenticated user     | `200 AnalysisResponse`; `404` if there is no analysis or no match                                                                                                                                         |
-| `POST /api/games/{matchId}/analysis` | either player of the match | `202` new or re-queued job; `200` already QUEUED or COMPLETED (no new job); `403` not a player; `404` no match; `429` the user already has 3 QUEUED jobs; `503` `ANALYSIS_UNAVAILABLE` or `ANALYSIS_BUSY` |
+| `GET /api/matches/{matchId}/analysis`  | any authenticated user     | `200 AnalysisResponse`; `404` if there is no analysis or no match                                                                                                                                         |
+| `POST /api/matches/{matchId}/analysis` | either player of the match | `202` new or re-queued job; `200` already QUEUED or COMPLETED (no new job); `403` not a player; `404` no match; `429` the user already has 3 QUEUED jobs; `503` `ANALYSIS_UNAVAILABLE` or `ANALYSIS_BUSY` |
 
 Errors use the existing `ProblemDetail` format.
 
@@ -695,7 +695,7 @@ This phase fixes the full contract and topology, and delivers the happy path plu
   - the result listener, the sweeper, both REST endpoints, and the user-destination push;
   - every Java test row in §11.
 - **Frontend:**
-  - the `/games/:matchId/analysis` page: board stepper, annotated move list, mistakes, and summary;
+  - the `/matches/:matchId/analysis` page: board stepper, annotated move list, mistakes, and summary;
   - the History link;
   - every state in §8 except the LLM note;
   - vitest tests.

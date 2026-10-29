@@ -49,7 +49,7 @@ const AppRoutes = () => {
             }
           />
           <Route
-            path="/games/:matchId/analysis"
+            path="/matches/:matchId/analysis"
             element={
               <PrivateRoute>
                 <Analysis />

@@ -217,14 +217,14 @@ class AnalysisAmqpIT {
 
     private RestClient.ResponseSpec post(Player player, UUID matchId) {
         return http.post()
-                .uri("/api/games/{id}/analysis", matchId)
+                .uri("/api/matches/{id}/analysis", matchId)
                 .header(HttpHeaders.COOKIE, player.session())
                 .retrieve();
     }
 
     private JsonNode get(Player player, UUID matchId) {
         return Objects.requireNonNull(http.get()
-                .uri("/api/games/{id}/analysis", matchId)
+                .uri("/api/matches/{id}/analysis", matchId)
                 .header(HttpHeaders.COOKIE, player.session())
                 .retrieve()
                 .body(JsonNode.class));
@@ -330,7 +330,7 @@ class AnalysisAmqpIT {
         assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(received).isEmpty();
         var notAnalyzed = http.get()
-                .uri("/api/games/{id}/analysis", matchId)
+                .uri("/api/matches/{id}/analysis", matchId)
                 .header(HttpHeaders.COOKIE, stranger.session())
                 .retrieve()
                 .onStatus(status -> true, (request, response) -> {})
@@ -354,7 +354,7 @@ class AnalysisAmqpIT {
         assertThat(Objects.requireNonNull(refused.getBody()).get("code").asString())
                 .isEqualTo("ANALYSIS_UNAVAILABLE");
         var notAnalyzed = http.get()
-                .uri("/api/games/{id}/analysis", matchId)
+                .uri("/api/matches/{id}/analysis", matchId)
                 .header(HttpHeaders.COOKIE, alice.session())
                 .retrieve()
                 .onStatus(status -> true, (request, response) -> {})

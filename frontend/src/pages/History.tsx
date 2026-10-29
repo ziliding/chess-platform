@@ -106,7 +106,7 @@ const History = () => {
 
   const handleDownloadPGN = async (gameId: string) => {
     try {
-      const pgnText = await gameService.getGamePGN(gameId);
+      const pgnText = await gameService.getMatchPGN(gameId);
       
       // Create a blob and download
       const blob = new Blob([pgnText], { type: 'text/plain' });
@@ -125,7 +125,7 @@ const History = () => {
 
   const handleCopyPGN = async (gameId: string) => {
     try {
-      const pgnText = await gameService.getGamePGN(gameId);
+      const pgnText = await gameService.getMatchPGN(gameId);
       
       await navigator.clipboard.writeText(pgnText);
       setCopiedGameId(gameId);
@@ -242,7 +242,7 @@ const History = () => {
                             <span>{copiedGameId === game.id ? 'Copied!' : 'Copy'}</span>
                           </button>
                           <Link
-                            to={`/games/${game.id}/analysis`}
+                            to={`/matches/${game.id}/analysis`}
                             className="btn btn-secondary text-sm flex items-center space-x-1"
                             title="Review this game with an engine"
                           >

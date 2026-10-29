@@ -7,7 +7,7 @@ import me.zilid.chessplatform.model.entity.AnalysisStatus;
 import org.jspecify.annotations.Nullable;
 
 /**
- * An analysis as the client sees it, from {@code GET /api/games/{matchId}/analysis} and pushed to
+ * An analysis as the client sees it, from {@code GET /api/matches/{matchId}/analysis} and pushed to
  * {@code /user/topic/analysis}. The result fields are null until COMPLETED.
  *
  * @param errorCode why a FAILED analysis failed, such as INVALID_PGN or TIMED_OUT
