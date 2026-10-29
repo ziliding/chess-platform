@@ -118,6 +118,13 @@ services:
       ENGINE_DEPTH: ${ANALYSIS_ENGINE_DEPTH:-16}
       ENGINE_POSITION_TIMEOUT: 2
       JOB_BUDGET_SECONDS: 120
+      # LLM explanations from any OpenAI-compatible endpoint; left empty, the engine's summary is used
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+    # So LLM_BASE_URL can reach a model served on the host (Ollama) on Linux too
+    extra_hosts:
+      - host.docker.internal:host-gateway
     # On SIGTERM the worker stops consuming and gets 50 s to finish its job; one still running is redelivered
     stop_grace_period: 60s
     depends_on:
