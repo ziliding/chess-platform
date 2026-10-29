@@ -102,7 +102,7 @@ through RabbitMQ:
 
 ```mermaid
 flowchart LR
-    Browser["Browser"] -- "POST /api/games/{id}/analysis" --> B["Backend"]
+    Browser["Browser"] -- "POST /api/matches/{id}/analysis" --> B["Backend"]
     B -- "job (AMQP)" --> Q["RabbitMQ<br/>analysis.requests"]
     Q --> A["Analysis service<br/>Stockfish"]
     A -- "result (AMQP)" --> B
@@ -367,14 +367,14 @@ REST endpoints live under `/api`. With the dev profile, the full reference is at
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Accounts            | `POST /users` (register), `POST /login`, `POST /logout`, `GET /me`, `GET /users?search=`, `PUT` / `DELETE /users`                                                                                          |
 | Games               | `POST /games`, `POST /games/{gameId}/join`, `GET /games/{gameId}/state`                                                                                                                                    |
-| History and ratings | `GET /games/users/{userId}`, `GET /games/{matchId}/pgn`, `GET /users/{userId}/ratings`                                                                                                                     |
-| Analysis            | `POST /games/{matchId}/analysis` (a player of the game requests it), `GET /games/{matchId}/analysis`                                                                                                       |
+| History and ratings | `GET /games/users/{userId}`, `GET /matches/{matchId}/pgn`, `GET /users/{userId}/ratings`                                                                                                                   |
+| Analysis            | `POST /matches/{matchId}/analysis` (a player of the game requests it), `GET /matches/{matchId}/analysis`                                                                                                   |
 | Friends             | `GET /friends`, `GET /friends/received`, `GET /friends/sent`, `POST /friends/send/{userId}`, `POST /friends/accept/{friendRequestId}`, `PUT /friends/reject/{friendRequestId}`, `DELETE /friends/{userId}` |
 
-A finished game is archived as a match with its own ID, so `GET /games/{matchId}/pgn` and the analysis endpoints take
+A finished game is archived as a match with its own ID, so `GET /matches/{matchId}/pgn` and the analysis endpoints take
 the `id` of an entry from the game history, not the live game's ID.
 
-`POST /games/{matchId}/analysis` answers `202` for a newly queued job and `200` with the existing analysis if one is
+`POST /matches/{matchId}/analysis` answers `202` for a newly queued job and `200` with the existing analysis if one is
 already queued or finished. Refusals use problem details: `403` for someone who did not play the game, `404` for an
 unknown game, `429` when the player already has 3 analyses running, and `503` with `code` `ANALYSIS_UNAVAILABLE` or
 `ANALYSIS_BUSY` when the analysis service is down or its queue is full. `GET` answers `404` until the game has been

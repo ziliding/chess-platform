@@ -34,10 +34,10 @@ public class GameController {
         return matchService.findMatches(userId, pageable);
     }
 
-    @GetMapping("/games/{gameId}/pgn")
-    public String getGamePGN(@PathVariable("gameId") UUID gameId) {
-        logger.debug("Fetching PGN for game: {}", gameId);
-        return matchService.getMatchPGN(gameId);
+    @GetMapping("/matches/{matchId}/pgn")
+    public String getMatchPGN(@PathVariable("matchId") UUID matchId) {
+        logger.debug("Fetching PGN for match: {}", matchId);
+        return matchService.getMatchPGN(matchId);
     }
 
     @PostMapping("/games")

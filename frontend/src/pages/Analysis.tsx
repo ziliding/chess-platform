@@ -50,7 +50,7 @@ const Analysis = () => {
     if (!matchId) return;
     let cancelled = false;
     gameService
-      .getGamePGN(matchId)
+      .getMatchPGN(matchId)
       .then((pgn) => {
         if (cancelled) return;
         const positions = positionsOf(pgn);

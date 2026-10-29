@@ -79,8 +79,8 @@ class AnalysisControllerWebMvcTest {
 
     @Test
     void bothEndpointsRequireAuthentication() {
-        assertThat(mvcTester.get().uri("/api/games/{id}/analysis", MATCH_ID)).hasStatus(HttpStatus.UNAUTHORIZED);
-        assertThat(mvcTester.post().uri("/api/games/{id}/analysis", MATCH_ID)).hasStatus(HttpStatus.UNAUTHORIZED);
+        assertThat(mvcTester.get().uri("/api/matches/{id}/analysis", MATCH_ID)).hasStatus(HttpStatus.UNAUTHORIZED);
+        assertThat(mvcTester.post().uri("/api/matches/{id}/analysis", MATCH_ID)).hasStatus(HttpStatus.UNAUTHORIZED);
 
         verifyNoInteractions(analysisService);
     }
@@ -91,7 +91,7 @@ class AnalysisControllerWebMvcTest {
 
         MvcTestResult result = mvcTester
                 .get()
-                .uri("/api/games/{id}/analysis", MATCH_ID)
+                .uri("/api/matches/{id}/analysis", MATCH_ID)
                 .with(user(PLAYER))
                 .exchange();
 
@@ -115,7 +115,7 @@ class AnalysisControllerWebMvcTest {
 
         assertThat(mvcTester
                         .get()
-                        .uri("/api/games/{id}/analysis", MATCH_ID)
+                        .uri("/api/matches/{id}/analysis", MATCH_ID)
                         .with(user(PLAYER))
                         .exchange())
                 .hasStatus(HttpStatus.NOT_FOUND);
@@ -128,7 +128,7 @@ class AnalysisControllerWebMvcTest {
 
         MvcTestResult result = mvcTester
                 .post()
-                .uri("/api/games/{id}/analysis", MATCH_ID)
+                .uri("/api/matches/{id}/analysis", MATCH_ID)
                 .with(user(PLAYER))
                 .exchange();
 
@@ -144,7 +144,7 @@ class AnalysisControllerWebMvcTest {
 
         assertThat(mvcTester
                         .post()
-                        .uri("/api/games/{id}/analysis", MATCH_ID)
+                        .uri("/api/matches/{id}/analysis", MATCH_ID)
                         .with(user(PLAYER))
                         .exchange())
                 .hasStatusOk();
@@ -167,7 +167,7 @@ class AnalysisControllerWebMvcTest {
 
         MvcTestResult result = mvcTester
                 .post()
-                .uri("/api/games/{id}/analysis", MATCH_ID)
+                .uri("/api/matches/{id}/analysis", MATCH_ID)
                 .with(user(PLAYER))
                 .exchange();
 
@@ -181,7 +181,7 @@ class AnalysisControllerWebMvcTest {
 
         MvcTestResult result = mvcTester
                 .post()
-                .uri("/api/games/{id}/analysis", MATCH_ID)
+                .uri("/api/matches/{id}/analysis", MATCH_ID)
                 .with(user(PLAYER))
                 .exchange();
 

@@ -26,8 +26,8 @@ export const gameService = {
     return response.data;
   },
 
-  getGamePGN: async (gameId: string): Promise<string> => {
-    const response = await api.get(`/games/${gameId}/pgn`);
+  getMatchPGN: async (matchId: string): Promise<string> => {
+    const response = await api.get(`/matches/${matchId}/pgn`);
     return response.data;
   },
 };

@@ -175,7 +175,7 @@ class GameControllerWebMvcTest {
     void pgnEndpointReturnsPlainText() {
         when(matchService.getMatchPGN(GAME_ID)).thenReturn("1. e4 e5 2. Nf3");
 
-        assertThat(mvcTester.get().uri("/api/games/{gameId}/pgn", GAME_ID).with(user(PLAYER)))
+        assertThat(mvcTester.get().uri("/api/matches/{matchId}/pgn", GAME_ID).with(user(PLAYER)))
                 .hasStatusOk()
                 .hasContentTypeCompatibleWith(MediaType.TEXT_PLAIN)
                 .hasBodyTextEqualTo("1. e4 e5 2. Nf3");
