@@ -269,7 +269,7 @@ class AnalysisAmqpIT {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"result.completed.json", "result.completed.extra-field.json"})
+    @ValueSource(strings = {"result.completed.json", "result.completed.extra-field.json", "result.completed.llm.json"})
     void aRequestedAnalysisIsComputedStoredAndPushedToBothPlayers(String fixture) throws Exception {
         answerWith.set(fixture);
         Player alice = register("alice");
@@ -293,6 +293,8 @@ class AnalysisAmqpIT {
         assertThat(stored.get("status").asString()).isEqualTo("COMPLETED");
         assertThat(stored.get("moves").get(5).get("classification").asString()).isEqualTo("BLUNDER");
         assertThat(stored.get("summary").get("text").asString()).contains("White won by checkmate");
+        // An LLM explanation survives the listener, the jsonb column and the GET
+        assertThat(stored.get("moves").get(5).get("explanation").isNull()).isNotEqualTo(fixture.contains(".llm."));
         // The request the service got is the contract's: this match's PGN, under a deadline
         assertThat(received).hasSize(1);
         assertThat(received.getFirst().get("schemaVersion").asInt()).isEqualTo(1);

@@ -63,7 +63,7 @@ class AnalysisServiceTest {
             new AnalysisPayload.Engine("Stockfish 17.1", 16),
             new AnalysisPayload.Eval(20, null),
             List.of(new AnalysisPayload.Move(
-                    1, "e4", "e2e4", new AnalysisPayload.Eval(30, null), "e4", "e2e4", 0.0, "BEST")),
+                    1, "e4", "e2e4", new AnalysisPayload.Eval(30, null), "e4", "e2e4", 0.0, "BEST", null)),
             new AnalysisPayload.Summary("White played well.", "TEMPLATE"));
 
     private final JsonMapper jsonMapper = JsonMapper.builder().build();

@@ -23,7 +23,8 @@
       "bestSan": "e4",
       "bestUci": "e2e4",
       "winChanceLoss": 0.0,
-      "classification": "BEST"
+      "classification": "BEST",
+      "explanation": null
     },
     {
       "ply": 2,
@@ -36,7 +37,8 @@
       "bestSan": "e5",
       "bestUci": "e7e5",
       "winChanceLoss": 0.0073,
-      "classification": "BEST"
+      "classification": "BEST",
+      "explanation": null
     },
     {
       "ply": 3,
@@ -49,7 +51,8 @@
       "bestSan": "Nf3",
       "bestUci": "g1f3",
       "winChanceLoss": 0.068,
-      "classification": "GOOD"
+      "classification": "GOOD",
+      "explanation": null
     },
     {
       "ply": 4,
@@ -62,7 +65,8 @@
       "bestSan": "Nf6",
       "bestUci": "g8f6",
       "winChanceLoss": 0.0606,
-      "classification": "GOOD"
+      "classification": "GOOD",
+      "explanation": null
     },
     {
       "ply": 5,
@@ -75,7 +79,8 @@
       "bestSan": "Nf3",
       "bestUci": "g1f3",
       "winChanceLoss": 0.1287,
-      "classification": "INACCURACY"
+      "classification": "INACCURACY",
+      "explanation": null
     },
     {
       "ply": 6,
@@ -88,7 +93,8 @@
       "bestSan": "g6",
       "bestUci": "g7g6",
       "winChanceLoss": 1.0607,
-      "classification": "BLUNDER"
+      "classification": "BLUNDER",
+      "explanation": null
     },
     {
       "ply": 7,
@@ -101,7 +107,8 @@
       "bestSan": "Qxf7#",
       "bestUci": "h5f7",
       "winChanceLoss": 0.0,
-      "classification": "BEST"
+      "classification": "BEST",
+      "explanation": null
     }
   ],
   "summary": {

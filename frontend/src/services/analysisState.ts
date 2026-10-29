@@ -62,7 +62,12 @@ export function requestRefusal(status: number | undefined, code: string | undefi
   return 'Could not request the analysis. Try again.';
 }
 
-export type AnalysisView = 'none' | 'queued' | 'completed' | 'failed';
+// The note under an engine-only summary. The result cannot tell an LLM that failed from one that is not set up.
+export function summaryNote(summary: Analysis['summary']): string | null {
+  return summary?.source === 'TEMPLATE' ? 'AI explanation unavailable — showing engine summary.' : null;
+}
+
+export type AnalysisView ='none' | 'queued' | 'completed' | 'failed';
 
 export function viewOf(analysis: Analysis | null): AnalysisView {
   if (analysis === null) return 'none';

@@ -167,6 +167,8 @@ export interface AnalysisMove {
   bestUci: string;
   winChanceLoss: number;
   classification: MoveClassification;
+  // The LLM's plain-text explanation of a mistake, if it gave one
+  explanation: string | null;
 }
 
 export interface Analysis {

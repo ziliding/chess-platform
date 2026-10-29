@@ -114,7 +114,12 @@ class Analyzed:
     initial_eval: Eval
     moves: list[MoveAnalysis]
     summary: Summary
+    # Per ply, the engine's line from the position before it (SAN, numbered); for the LLM, not on the wire
+    best_lines: list[str]
 
+
+# Moves of the engine's line kept for the LLM (spec §10)
+BEST_LINE_PLIES = 4
 
 # How long past its time cap the engine may take to answer before it counts as hung
 HANG_GRACE_SECONDS = 10
@@ -131,24 +136,24 @@ async def analyze(
     limit = chess.engine.Limit(depth=depth, time=position_timeout or None)
     hang_timeout = position_timeout + HANG_GRACE_SECONDS if position_timeout else None
 
-    async def evaluate(position: chess.Board) -> tuple[Scored, chess.Move | None]:
+    async def evaluate(position: chess.Board) -> tuple[Scored, list[chess.Move]]:
         terminal = score_terminal(position)
         if terminal is not None:
-            return terminal, None
+            return terminal, []
         async with asyncio.timeout(hang_timeout):
             info = await engine.analyse(position, limit, game=game_token)
-        pv = info.get("pv")
-        return score_from_engine(info["score"]), pv[0] if pv else None
+        return score_from_engine(info["score"]), info.get("pv", [])
 
-    current, best = await evaluate(board)
+    current, line = await evaluate(board)
     initial = previous = current
     analyzed: list[MoveAnalysis] = []
+    best_lines: list[str] = []
     for ply, move in enumerate(moves, start=1):
         before = board.copy()
-        best_move = best if best is not None else move
+        best_move = line[0] if line else move
         san = board.san(move)
         board.push(move)
-        current, next_best = await evaluate(board)
+        current, next_line = await evaluate(board)
         white_moved = ply % 2 == 1
         delta = current.chances - previous.chances
         # The mover's loss is White's drop, or White's gain when Black moved
@@ -165,13 +170,15 @@ async def analyze(
                 classification=classify(move, best_move, loss),
             )
         )
-        previous, best = current, next_best
+        best_lines.append(before.variation_san(line[:BEST_LINE_PLIES]))
+        previous, line = current, next_line
     name = engine.id.get("name", "Stockfish")
     return Analyzed(
         engine=EngineInfo(name=name, depth=depth),
         initial_eval=initial.eval,
         moves=analyzed,
         summary=Summary(text=summarize(initial.eval, analyzed, board, result), source="TEMPLATE"),
+        best_lines=best_lines,
     )
 
 
@@ -182,11 +189,14 @@ def fmt_eval(ev: Eval) -> str:
     return f"{ev.cp / 100:+.1f}"
 
 
+def numbered(ply: int, san: str) -> str:
+    """`3.Bc4` for White's third move, `3...Nf6` for Black's."""
+    return f"{(ply + 1) // 2}{'.' if ply % 2 == 1 else '...'}{san}"
+
+
 def _label(move: MoveAnalysis) -> str:
-    number = (move.ply + 1) // 2
-    dots = "." if move.ply % 2 == 1 else "..."
     mark = {"INACCURACY": "?!", "MISTAKE": "?", "BLUNDER": "??"}.get(move.classification, "")
-    return f"{number}{dots}{move.san}{mark}"
+    return numbered(move.ply, move.san) + mark
 
 
 def _plural(n: int, singular: str, plural: str) -> str:
@@ -219,9 +229,7 @@ def summarize(initial: Eval, moves: Sequence[MoveAnalysis], final_board: chess.B
 
 
 def _label_best(move: MoveAnalysis) -> str:
-    number = (move.ply + 1) // 2
-    dots = "." if move.ply % 2 == 1 else "..."
-    return f"{number}{dots}{move.best_san}"
+    return numbered(move.ply, move.best_san)
 
 
 def _result_sentence(board: chess.Board, result: str) -> str:

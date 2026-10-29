@@ -7,6 +7,7 @@ import {
   mistakes,
   moveLabel,
   requestRefusal,
+  summaryNote,
   viewOf,
   watchAnalysis,
 } from './analysisState';
@@ -21,6 +22,7 @@ const move = (ply: number, classification: AnalysisMove['classification'], san =
   bestUci: 'd2d4',
   winChanceLoss: 0,
   classification,
+  explanation: null,
 });
 
 const analysis = (status: Analysis['status'], overrides: Partial<Analysis> = {}): Analysis => ({
@@ -81,6 +83,12 @@ describe('degraded states', () => {
     expect(requestRefusal(429, undefined)).toMatch(/3 analyses running/);
     expect(requestRefusal(403, undefined)).toMatch(/players/);
     expect(requestRefusal(undefined, undefined)).toMatch(/Could not request/);
+  });
+
+  it('notes when the summary comes from the engine instead of the LLM', () => {
+    expect(summaryNote({ text: 'White won.', source: 'TEMPLATE' })).toMatch(/AI explanation unavailable/);
+    expect(summaryNote({ text: 'White won.', source: 'LLM' })).toBeNull();
+    expect(summaryNote(null)).toBeNull();
   });
 
   it('names the view for each analysis state', () => {
