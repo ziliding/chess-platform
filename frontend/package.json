@@ -16,13 +16,13 @@
   },
   "dependencies": {
     "@stomp/stompjs": "^7.5.0",
-    "axios": "^1.20.0",
+    "axios": "^1.21.0",
     "chess.js": "^1.0.0-beta.6",
-    "lucide-react": "^1.61.0",
+    "lucide-react": "^1.64.0",
     "react": "^19.3.1",
     "react-chessboard": "^5.12.1",
     "react-dom": "^19.3.1",
-    "react-router-dom": "^7.18.4",
+    "react-router-dom": "^7.18.5",
     "sockjs-client": "^1.6.1"
   },
   "devDependencies": {
@@ -38,7 +38,7 @@
     "globals": "^17.13.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
-    "typescript-eslint": "^8.72.0",
+    "typescript-eslint": "^8.72.1",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
   }
