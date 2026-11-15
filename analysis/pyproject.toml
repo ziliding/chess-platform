@@ -4,22 +4,22 @@ version = "0.1.0"
 description = "Stateless chess game analysis worker: Stockfish evaluations over RabbitMQ"
 requires-python = ">=3.15"
 dependencies = [
-    "aio-pika>=10.2",
+    "aio-pika>=10.2.3",
     "chess>=1.11",
-    "fastapi>=0.162",
-    "openai>=3.41.0",
-    "pydantic>=2.14",
+    "fastapi>=0.162.5",
+    "openai>=3.49.0",
+    "pydantic>=2.14.3",
     "uvicorn>=0.40",
 ]
 
 [dependency-groups]
 dev = [
     "httpx2>=2",
-    "pyrefly>=1.4",
-    "pytest>=9",
+    "pyrefly>=1.4.1",
+    "pytest>=9.2.0",
     "pytest-asyncio>=1",
     "pytest-cov>=7",
-    "ruff>=0.17",
+    "ruff>=0.17.4",
     "testcontainers>=4.15",
 ]
 
